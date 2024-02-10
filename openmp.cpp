@@ -4,9 +4,11 @@
 #include <ctime>   // for time()
 #include <omp.h>
 #include <chrono>
+#include <cmath>
 using namespace std;
 #define MAX_THREADS 4
 static int num_threads;
+
 /*
 inputs: a(n,n)
     outputs: π(n), l(n,n), and u(n,n)
@@ -50,12 +52,14 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
     auto start = std::chrono::high_resolution_clock::now();
     // initialize u as an n x n matrix with 0s below the diagonal
     // initialize l as an n x n matrix with 1s on the diagonal and 0s above the diagonal
+    #pragma omp parallel for schedule(static, n/num_threads)
     for(int i = 0; i < n; i++){
         l[i][i] = 1;
     }
 
     // Initialize π as a vector of length n
     // thread start
+    #pragma omp parallel for schedule(static, n/num_threads)
     for (int i = 0; i < n; ++i)
         pi[i] = i;
     // thread join
@@ -65,7 +69,8 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         int k_prime = 0;
         
         // Find the maximum absolute value in column k
-        // threa/d start
+        // thread start
+        #pragma omp parallel for schedule(static, n/num_threads)
         for (int i = k; i < n; ++i) {
             if (abs(a[i][k]) > max_val) {
                 max_val = abs(a[i][k]);
@@ -84,6 +89,7 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         // thread join
 
         // thread start
+        #pragma omp parallel for schedule(static, n/num_threads)
         for (int i = 0; i < k; ++i)
             swap(l[k][i], l[k_prime][i]);
         // thread join
@@ -91,6 +97,7 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         u[k][k] = a[k][k];
         
         // thread start
+        #pragma omp parallel for schedule(static, n/num_threads)
         for (int i = k + 1; i < n; ++i) {
             l[i][k] = a[i][k] / u[k][k];
             u[k][i] = a[k][i];
@@ -98,6 +105,7 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         // thread join
         
         // thread start
+        #pragma omp parallel for schedule(static, n/num_threads)
         for (int i = k + 1; i < n; ++i) {
             for (int j = k + 1; j < n; ++j) {
                 a[i][j] -= l[i][k] * u[k][j];
@@ -111,16 +119,38 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
 
     // calculate L*U
     vector<vector<double>> lu(n, vector<double>(n, 0.0));
-    for(int i = 0; i < n; i++){
-        for(int j = 0; j < n; j++){
-            double sum = 0;
-            for(int k = 0; k < n; k++){
-                sum += l[i][k] * u[k][j];
-            }
-            lu[i][j] = sum;
-        }
-    }
+    // for(int i = 0; i < n; i++){
+    //     for(int j = 0; j < n; j++){
+    //         double sum = 0;
+    //         for(int k = 0; k < n; k++){
+    //             sum += l[i][k] * u[k][j];
+    //         }
+    //         lu[i][j] = sum;
+    //     }
+    // }
     return lu;
+}
+double computeL21Norm(const std::vector<std::vector<double>>& matrix) {
+    int n = matrix.size(); // Size of the square matrix
+    double l21Norm = 0.0;
+
+    // Iterate through each column of the matrix
+    for (int j = 0; j < n; ++j) {
+        double columnSumOfSquares = 0.0;
+
+        // Calculate the sum of squares of elements in the current column
+        for (int i = 0; i < n; ++i) {
+            columnSumOfSquares += matrix[i][j] * matrix[i][j];
+        }
+
+        // Take the square root of the sum of squares
+        double columnNorm = sqrt(columnSumOfSquares);
+
+        // Add the square root to the L2,1 norm
+        l21Norm += columnNorm;
+    }
+
+    return l21Norm;
 }
 
 int main(int argc, char *argv[])  {
@@ -141,28 +171,29 @@ int main(int argc, char *argv[])  {
     srand(time(nullptr));
     // int size = 10;
     // Declare a 2D vector of size 100x100
-    vector<vector<double>> a(size, vector<double>(size));
+    vector<vector<double>> A_original(size, vector<double>(size));
 
     for (int i = 0; i < size; ++i) {
         for (int j = 0; j < size; ++j) {
-            a[i][j] = rand() % 10 + 1; // Generates a random integer between 1 and 10
+            A_original[i][j] = rand() % 10 + 1; // Generates a random integer between 1 and 10
         }
     }
-    // cout<<"original matrix a: \n";
-    // for (int i = 0; i < size; ++i) {
-    //     for (int j = 0; j < size; ++j) {
-    //         cout << a[i][j] << " ";
-    //     }
-    //     cout << endl;
-    // }
-    vector<int> pi(a.size());
+    vector<int> pi(size);
     vector<vector<double>> L, U;
-    vector<vector<double>> luprod= lu_decomposition(a, pi);
+    vector<vector<double>> luprod= lu_decomposition(A_original, pi);
     
-    vector<vector<double>> A_permuted(a.size(), vector<double>(a[0].size(), 0.0));
+    vector<vector<double>> A_permuted(size, vector<double>(size, 0.0));
     for (int i = 0; i < pi.size(); ++i) {
             A_permuted[pi[i]] = luprod[i];
     }
+    vector<vector<double>> diff(size, vector<double>(size, 0.0));
+    for(int i=0;i<size;i++){
+        for(int j=0;j<size;j++)
+            diff[i][j] = A_permuted[i][j]-A_original[i][j];
+    }
+    double l21Norm = computeL21Norm(diff);
+    std::cout << "L2,1 Norm: " << l21Norm << std::endl;
+
     // Output results
     // cout << "pi :"<<endl;
     // for (int i = 0; i < pi.size(); ++i) cout << pi[i] << " ";

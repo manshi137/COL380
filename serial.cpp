@@ -4,7 +4,7 @@
 #include <ctime>   // for time()
 
 using namespace std;
-
+static int num_threads;
 /*
 inputs: a(n,n)
     outputs: π(n), l(n,n), and u(n,n)
@@ -109,43 +109,82 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
     }
     return lu;
 }
-int main() {
+
+double computeL21Norm(const std::vector<std::vector<double>>& matrix) {
+    int n = matrix.size(); // Size of the square matrix
+    double l21Norm = 0.0;
+
+    // Iterate through each column of the matrix
+    for (int j = 0; j < n; ++j) {
+        double columnSumOfSquares = 0.0;
+
+        // Calculate the sum of squares of elements in the current column
+        for (int i = 0; i < n; ++i) {
+            columnSumOfSquares += matrix[i][j] * matrix[i][j];
+        }
+
+        // Take the square root of the sum of squares
+        double columnNorm = sqrt(columnSumOfSquares);
+
+        // Add the square root to the L2,1 norm
+        l21Norm += columnNorm;
+    }
+
+    return l21Norm;
+}
+
+int main(int argc, char *argv[])  {
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <matrix_size> <num_threads>" << std::endl;
+        return 1;
+    }
+
+    // Convert command-line arguments to integers
+    int size = std::atoi(argv[1]); // Size of the matrix
+    num_threads = std::atoi(argv[2]); // Number of threads
+    cout<<"size= "<<size<<endl;
+    cout<<"num_threads= "<<num_threads<<endl;
+
+    // Set the number of threads to be used
+    // omp_set_num_threads(num_threads);
+
     srand(time(nullptr));
-    int size = 10;
+    // int size = 10;
     // Declare a 2D vector of size 100x100
-    vector<vector<double>> a(size, vector<double>(size));
+    vector<vector<double>> A_original(size, vector<double>(size));
 
     for (int i = 0; i < size; ++i) {
         for (int j = 0; j < size; ++j) {
-            a[i][j] = rand() % 10 + 1; // Generates a random integer between 1 and 10
+            A_original[i][j] = rand() % 10 + 1; // Generates a random integer between 1 and 10
         }
     }
-    cout<<"original matrix a: \n";
-    for (int i = 0; i < size; ++i) {
-        for (int j = 0; j < size; ++j) {
-            cout << a[i][j] << " ";
-        }
-        cout << endl;
-    }
-    vector<int> pi(a.size());
+    vector<int> pi(size);
     vector<vector<double>> L, U;
-    vector<vector<double>> luprod= lu_decomposition(a, pi);
+    vector<vector<double>> luprod= lu_decomposition(A_original, pi);
     
-    // Output results
-    cout << "π:";
-    for (int i = 0; i < pi.size(); ++i) cout << " " << pi[i];
-    cout << endl;
-    cout << "a after applying permutation pi:" << endl;
-    vector<vector<double>> A_permuted(a.size(), vector<double>(a[0].size(), 0.0));
+    vector<vector<double>> A_permuted(size, vector<double>(size, 0.0));
     for (int i = 0; i < pi.size(); ++i) {
             A_permuted[pi[i]] = luprod[i];
     }
-    // print A_permuted
-    for(int i = 0; i < a.size(); i++){
-        for(int j = 0; j < a.size(); j++){
-            cout << A_permuted[i][j] << " ";
-        }
-        cout << endl;
+    vector<vector<double>> diff(size, vector<double>(size, 0.0));
+    for(int i=0;i<size;i++){
+        for(int j=0;j<size;j++)
+            diff[i][j] = A_permuted[i][j]-A_original[i][j];
     }
+    double l21Norm = computeL21Norm(diff);
+    std::cout << "L2,1 Norm: " << l21Norm << std::endl;
+
+    // Output results
+    // cout << "pi :"<<endl;
+    // for (int i = 0; i < pi.size(); ++i) cout << pi[i] << " ";
+    // cout << endl;
+    // print A_permuted
+    // cout << "a after applying permutation pi:" << endl;
+    // for(int i = 0; i < a.size(); i++){
+    //     for(int j = 0; j < a.size(); j++){
+    //         cout << A_permuted[i][j] << " ";
+    //     }
+    //     cout << endl;
+    // }
 }
 // g++ serial.cpp  -std=c++11 
