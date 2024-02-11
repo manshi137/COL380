@@ -16,6 +16,37 @@ static int k_global = 0;
 static int k_prime = -1;
 static double max_val = -1e9;
 
+void* swap1(void* rank){
+    long my_rank = (long) rank;
+    int chunk_size = (curr_size) / num_threads; // Calculate the chunkSIZE for each thread
+    int start_index = (my_rank * chunk_size) ; // Calculate the start index for this thread
+    int end_index = (my_rank == num_threads - 1) ? curr_size : (start_index + chunk_size); // Calculate the end index
+    if (curr_size<num_threads){
+        if(my_rank!=0) return NULL;
+        start_index = 0 ; // Calculate the start index for this thread
+        end_index = curr_size; // Calculate the end index
+    }
+    for(int i = start_index; i<end_index; i++){
+        swap(A_global[k_global][i], A_global[k_prime][i]);
+    }
+    return NULL;
+}
+void* swap2(void* rank){
+    long my_rank = (long) rank;
+    int chunk_size = (k_global) / num_threads; // Calculate the chunkSIZE for each thread
+    int start_index = (my_rank * chunk_size) ; // Calculate the start index for this thread
+    int end_index = (my_rank == num_threads - 1) ? k_global : (start_index + chunk_size); // Calculate the end index
+    if (k_global<num_threads){
+        if(my_rank!=0) return NULL;
+        start_index = 0 ; // Calculate the start index for this thread
+        end_index = k_global; // Calculate the end index
+    }
+    for(int i = start_index; i<end_index; i++){
+        swap(l_global[k_global][i], l_global[k_prime][i]);
+    }
+    return NULL;
+}
+
 void* assign_a(void* rank){
     long my_rank = (long) rank;
     long loopsize = (curr_size-k_global)*(curr_size-k_global);
@@ -107,6 +138,8 @@ vector<vector<double>> lu_decomposition(vector<vector<double>>& a, vector<int>& 
     pthread_t* thread_handles2;
     pthread_t* thread_handles3;
     pthread_t* thread_handles4;
+    pthread_t* thread_handles5;
+    pthread_t* thread_handles6;
     // vector<vector<double>> l(curr_size, vector<double>(curr_size, 0.0));
     // vector<vector<double>> u(curr_size, vector<double>(curr_size, 0.0));
     for(int i = 0; i < curr_size; i++){
@@ -143,13 +176,31 @@ vector<vector<double>> lu_decomposition(vector<vector<double>>& a, vector<int>& 
         }
         
         swap(pi[k_global], pi[k_prime]);
-        // thread start
-        swap(a[k_global], a[k_prime]);
-        // thread join
 
+        // thread start loop4
+        // for(int i = 0; i < curr_size; i++){
+        //     swap(a[k_global][i], a[k_prime][i]);
+        // }
+        thread_handles5= (pthread_t*)malloc(num_threads * sizeof(pthread_t));
+        for (int thread=0; thread<num_threads; thread++) {
+            pthread_create(&thread_handles5[thread], NULL, swap1, (void *) thread);
+        }
+        for(int thread=0; thread<num_threads; thread++) {
+            pthread_join(thread_handles5[thread], NULL);
+        }
+        free(thread_handles5);
+        // thread join loop4
         // thread start
-        for (int i = 0; i < k_global; ++i)
-            swap(l_global[k_global][i], l_global[k_prime][i]);
+        // for (int i = 0; i < k_global; ++i)
+        //     swap(l_global[k_global][i], l_global[k_prime][i]);
+        thread_handles6= (pthread_t*)malloc(num_threads * sizeof(pthread_t));
+        for (int thread=0; thread<num_threads; thread++) {
+            pthread_create(&thread_handles6[thread], NULL, swap2, (void *) thread);
+        }
+        for(int thread=0; thread<num_threads; thread++) {
+            pthread_join(thread_handles6[thread], NULL);
+        }
+        free(thread_handles6);
         // thread join
 
         u_global[k_global][k_global] = a[k_global][k_global];
