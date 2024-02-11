@@ -3,6 +3,7 @@
 #include <cstdlib> // for rand() and srand()
 #include <ctime>   // for time()
 #include <chrono>
+#include <cmath>
 
 using namespace std;
 static int num_threads;

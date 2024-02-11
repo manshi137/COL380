@@ -51,7 +51,7 @@ void* swap2(void* rank){
 
 void* assign_a(void* rank){
     long my_rank = (long) rank;
-    long loopsize = (curr_size-k_global)*(curr_size-k_global);
+    long loopsize = (curr_size-k_global-1)*(curr_size-k_global-1);
     int chunk_size = (loopsize) / num_threads; 
     int start_index = (my_rank * chunk_size) ; // Calculate the start index for this thread
     int end_index = (my_rank == num_threads - 1) ? loopsize : (start_index + chunk_size); // Calculate the end index
@@ -61,15 +61,17 @@ void* assign_a(void* rank){
         end_index = loopsize; // Calculate the end index
     }
     for(int ind = start_index; ind<end_index; ind++){
-        int i = ind/(curr_size-k_global) + k_global+1;
-        int j = ind%(curr_size-k_global) + k_global+1;
+        int i = ind/(curr_size-k_global-1) + k_global+1;
+        int j = ind%(curr_size-k_global-1) + k_global+1;
         A_global[i][j] -= l_global[i][k_global] * u_global[k_global][j];
     }
-    // for(int ind =0 ; ind<(curr_size-k_global)*(curr_size-k_global); ind++){
-    //     int i = ind/(curr_size-k_global) + k_global+1;
-    //     int j = ind%(curr_size-k_global) + k_global+1;
-    //     a[i][j] -= l_global[i][k_global] * u_global[k_global][j];
-    // }
+    //  for(int ind =0 ; ind<((n-k-1)*(n-k-1)); ind++){
+    //         int i = ind/(n-k-1) + k+1;
+    //         int j = ind%(n-k-1) + k+1;
+    //         // if(k==2)cout<<i<<" "<<j<<" "<<k<<" "<<ind<<endl;
+    //         a[i][j] -= l[i][k] * u[k][j];
+    //     }
+
     return NULL;
 }
 
@@ -242,7 +244,7 @@ vector<vector<double>> lu_decomposition(vector<vector<double>>& a, vector<int>& 
         //         a[i][j] -= l_global[i][k_global] * u_global[k_global][j];
         //     }
         // }
-        // for(int ind =0 ; ind<(curr_size-k_global)*(curr_size-k_global); ind++){
+        // for(int ind =0 ; ind<(curr_size-k_global-1)*(curr_size-k_global-1); ind++){
         //     int i = ind/(curr_size-k_global) + k_global+1;
         //     int j = ind%(curr_size-k_global) + k_global+1;
         //     a[i][j] -= l_global[i][k_global] * u_global[k_global][j];
