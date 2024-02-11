@@ -22,9 +22,6 @@ struct threaddata{
     // int thread_id;
     vector<vector<pair<info,pair<int,int> > > > data;
 };
-// {
-//     /* data */
-// };
 
 /*
 inputs: a(n,n)
@@ -123,7 +120,7 @@ void* max_finder(void* arg) {
     // int k = ...;
     
      // Calculate the chunkSIZE for each thread
-     int chunk_size = (SIZE-k) / MAX_THREADS; // Calculate the chunkSIZE for each thread
+    int chunk_size = (SIZE-k) / MAX_THREADS; // Calculate the chunkSIZE for each thread
     int start_index = (thread_id * chunk_size)+k ; // Calculate the start index for this thread
     int end_index = (thread_id == MAX_THREADS - 1) ? SIZE : (start_index + chunk_size); // Calculate the end index
     if (SIZE-k<MAX_THREADS){
@@ -143,7 +140,7 @@ void* max_finder(void* arg) {
             }
         // }
     }
-    printf(" $$$$$$$$$$$$$$$$$$$$$$ %d %d %d %d\n",k,k_prime,thread_id,pthread_self());
+    printf("$$$$$$$$$$$$$$$$$$$$$$ %d %d %d %d\n",k,k_prime,thread_id,pthread_self());
     pthread_exit(NULL); // Exit the thread
     return (void*) k_prime;
 }
@@ -226,7 +223,7 @@ vector<vector<double> > lu_decomposition(vector<vector<double> > a, vector<int>&
                 k_prime = local_max_index;
             }
         }
-        print
+        // print
         max_val= a[k_prime][k];
         cout<<max_val;
 
