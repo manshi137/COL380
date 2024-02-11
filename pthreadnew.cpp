@@ -3,14 +3,16 @@
 #include <cstdlib> // for rand() and srand()
 #include <ctime>   // for time()
 #include <pthread.h>
-#define MAX_SIZE 1000   
+#include <ctime>   // for time()
+#include <chrono>
+#define MAX_SIZE 8001   
 using namespace std;
 static int num_threads;
 int curr_size ;
-vector<vector<double>> A_global(MAX_SIZE, vector<double>(MAX_SIZE, 100.0));
-vector<vector<double>> l_global(MAX_SIZE, vector<double>(MAX_SIZE,0.0));
-vector<vector<double>> u_global(MAX_SIZE, vector<double>(MAX_SIZE, 0.0));
-vector<int> pi_global(MAX_SIZE);
+static vector<vector<double>> A_global(MAX_SIZE, vector<double>(MAX_SIZE, 100.0));
+static vector<vector<double>> l_global(MAX_SIZE, vector<double>(MAX_SIZE,0.0));
+static vector<vector<double>> u_global(MAX_SIZE, vector<double>(MAX_SIZE, 0.0));
+static vector<int> pi_global(MAX_SIZE);
 pthread_mutex_t mutex1;
 static int k_global = 0;
 static int k_prime = -1;
@@ -134,6 +136,7 @@ void* get_k_prime(void* rank){
 
 vector<vector<double>> lu_decomposition(vector<vector<double>>& a, vector<int>& pi){
     cout<<"calling lu_decomposition"<<endl;
+    auto start = std::chrono::high_resolution_clock::now();
     pthread_t* thread_handles1;
     pthread_t* thread_handles2;
     pthread_t* thread_handles3;
@@ -254,6 +257,10 @@ vector<vector<double>> lu_decomposition(vector<vector<double>>& a, vector<int>& 
         free(thread_handles4);
         // thread join loop3
     }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Computation time: " << duration.count() << " millisec " << "for n ="<<curr_size<<" and num_threads="<<num_threads<< endl;
+
     // calculate L*U
     vector<vector<double>> lu(curr_size, vector<double>(curr_size, 0.0));
     for(int i = 0; i < curr_size; i++){
@@ -301,13 +308,13 @@ int main(int argc, char *argv[])  {
             A_global[i][j] = A_original[i][j];
         }
     }
-    // print a
-    for (int i = 0; i < curr_size; ++i) {
-        for (int j = 0; j < curr_size; ++j) {
-            std::cout << A_global[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
+    // // print a
+    // for (int i = 0; i < curr_size; ++i) {
+    //     for (int j = 0; j < curr_size; ++j) {
+    //         std::cout << A_global[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
     //main
     vector<vector<double>> luprod= lu_decomposition(A_global, pi_global);
     //mainover
@@ -315,13 +322,13 @@ int main(int argc, char *argv[])  {
     for (int i = 0; i < curr_size; ++i) {
             A_permuted[pi_global[i]] = luprod[i];
     }
-    // print a_original and a_permuted
-    for (int i = 0; i < curr_size; ++i) {
-        for (int j = 0; j < curr_size; ++j) {cout << A_original[i][j] << " ";}
-        cout << " | ";
-        for (int j = 0; j < curr_size; ++j) {cout << A_permuted[i][j] << " ";}
-        cout << endl;
-    }
+    // // print a_original and a_permuted
+    // for (int i = 0; i < curr_size; ++i) {
+    //     for (int j = 0; j < curr_size; ++j) {cout << A_original[i][j] << " ";}
+    //     cout << " | ";
+    //     for (int j = 0; j < curr_size; ++j) {cout << A_permuted[i][j] << " ";}
+    //     cout << endl;
+    // }
     vector<vector<double>> diff(curr_size, vector<double>(curr_size, 0.0));
     for(int i=0;i<curr_size;i++){
         for(int j=0;j<curr_size;j++)
