@@ -2,6 +2,7 @@
 #include <vector>
 #include <cstdlib> // for rand() and srand()
 #include <ctime>   // for time()
+#include <chrono>
 
 using namespace std;
 static int num_threads;
@@ -40,6 +41,8 @@ inputs: a(n,n)
 
 // vector<int> pi(n);
 vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& pi){
+    cout<<"calling lu_decomposition"<<endl;
+    auto start = std::chrono::high_resolution_clock::now();
     int n = a.size();
     vector<vector<double>> l(n, vector<double>(n, 0.0));
     vector<vector<double>> u(n, vector<double>(n, 0.0));
@@ -96,6 +99,10 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         }
         // thread join
     }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Computation time: " << duration.count() << " millisec " << "for n ="<<n<< endl;
+
     // calculate L*U
     vector<vector<double>> lu(n, vector<double>(n, 0.0));
     for(int i = 0; i < n; i++){
@@ -143,10 +150,8 @@ int main(int argc, char *argv[])  {
     int size = std::atoi(argv[1]); // Size of the matrix
     num_threads = std::atoi(argv[2]); // Number of threads
     cout<<"size= "<<size<<endl;
-    cout<<"num_threads= "<<num_threads<<endl;
 
     // Set the number of threads to be used
-    // omp_set_num_threads(num_threads);
 
     srand(time(nullptr));
     // int size = 10;
