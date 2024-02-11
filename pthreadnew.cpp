@@ -264,12 +264,12 @@ int main(int argc, char *argv[])  {
     for (int i = 0; i < curr_size; ++i) {
             A_permuted[pi_global[i]] = luprod[i];
     }
-    // print a_original and a+permuted
+    // print a_original and a_permuted
     for (int i = 0; i < curr_size; ++i) {
-        for (int j = 0; j < curr_size; ++j) {    std::cout << A_original[i][j] << " ";}
-        std::cout << " | ";
-        for (int j = 0; j < curr_size; ++j) {    std::cout << A_permuted[i][j] << " ";}
-        std::cout << std::endl;
+        for (int j = 0; j < curr_size; ++j) {cout << A_original[i][j] << " ";}
+        cout << " | ";
+        for (int j = 0; j < curr_size; ++j) {cout << A_permuted[i][j] << " ";}
+        cout << endl;
     }
     vector<vector<double>> diff(curr_size, vector<double>(curr_size, 0.0));
     for(int i=0;i<curr_size;i++){
