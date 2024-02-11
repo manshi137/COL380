@@ -15,12 +15,38 @@ pthread_mutex_t mutex1;
 static int k_global = 0;
 static int k_prime = -1;
 static double max_val = -1e9;
+
+void* assign_a(void* rank){
+    long my_rank = (long) rank;
+    long loopsize = (curr_size-k_global)*(curr_size-k_global);
+    int chunk_size = (loopsize) / num_threads; 
+    int start_index = (my_rank * chunk_size) ; // Calculate the start index for this thread
+    int end_index = (my_rank == num_threads - 1) ? loopsize : (start_index + chunk_size); // Calculate the end index
+    if (loopsize<num_threads){
+        if(my_rank!=0) return NULL;
+        start_index = 0 ; // Calculate the start index for this thread
+        end_index = loopsize; // Calculate the end index
+    }
+    for(int ind = start_index; ind<end_index; ind++){
+        int i = ind/(curr_size-k_global) + k_global+1;
+        int j = ind%(curr_size-k_global) + k_global+1;
+        A_global[i][j] -= l_global[i][k_global] * u_global[k_global][j];
+    }
+    // for(int ind =0 ; ind<(curr_size-k_global)*(curr_size-k_global); ind++){
+    //     int i = ind/(curr_size-k_global) + k_global+1;
+    //     int j = ind%(curr_size-k_global) + k_global+1;
+    //     a[i][j] -= l_global[i][k_global] * u_global[k_global][j];
+    // }
+    return NULL;
+}
+
 void* assign_l(void* rank){
     long my_rank = (long) rank;
     int chunk_size = (curr_size-(k_global+1)) / num_threads; // Calculate the chunkSIZE for each thread
     int start_index = (my_rank * chunk_size)+(k_global+1) ; // Calculate the start index for this thread
     int end_index = (my_rank == num_threads - 1) ? curr_size : (start_index + chunk_size); // Calculate the end index
     if (curr_size-(k_global+1)<num_threads){
+        if(my_rank!=0) return NULL;
         start_index = (k_global+1) ; // Calculate the start index for this thread
         end_index = curr_size; // Calculate the end index
     }
@@ -30,12 +56,14 @@ void* assign_l(void* rank){
     }
     return NULL;
 }
+
 void* assign_u(void* rank){
     long my_rank = (long) rank;
     int chunk_size = (curr_size-(k_global+1)) / num_threads; // Calculate the chunkSIZE for each thread
     int start_index = (my_rank * chunk_size)+(k_global+1) ; // Calculate the start index for this thread
     int end_index = (my_rank == num_threads - 1) ? curr_size : (start_index + chunk_size); // Calculate the end index
     if (curr_size-(k_global+1)<num_threads){
+        if(my_rank!=0) return NULL;
         start_index = (k_global+1) ; // Calculate the start index for this thread
         end_index = curr_size; // Calculate the end index
     }
@@ -45,7 +73,6 @@ void* assign_u(void* rank){
     return NULL;
 }
 
-
 void* get_k_prime(void* rank){
     
     long my_rank = (long) rank;
@@ -53,6 +80,7 @@ void* get_k_prime(void* rank){
     int start_index = (my_rank * chunk_size)+k_global ; // Calculate the start index for this thread
     int end_index = (my_rank == num_threads - 1) ? curr_size : (start_index + chunk_size); // Calculate the end index
     if (curr_size-k_global<num_threads){
+        if(my_rank!=0) return NULL;
         start_index = k_global ; // Calculate the start index for this thread
         end_index = curr_size; // Calculate the end index
     }
@@ -78,6 +106,7 @@ vector<vector<double>> lu_decomposition(vector<vector<double>>& a, vector<int>& 
     pthread_t* thread_handles1;
     pthread_t* thread_handles2;
     pthread_t* thread_handles3;
+    pthread_t* thread_handles4;
     // vector<vector<double>> l(curr_size, vector<double>(curr_size, 0.0));
     // vector<vector<double>> u(curr_size, vector<double>(curr_size, 0.0));
     for(int i = 0; i < curr_size; i++){
@@ -154,11 +183,24 @@ vector<vector<double>> lu_decomposition(vector<vector<double>>& a, vector<int>& 
         // thread join loop2.2
 
         // thread start loop3
-        for (int i = k_global + 1; i < curr_size; ++i) {
-            for (int j = k_global + 1; j < curr_size; ++j) {
-                a[i][j] -= l_global[i][k_global] * u_global[k_global][j];
-            }
+        // for (int i = k_global + 1; i < curr_size; ++i) {
+        //     for (int j = k_global + 1; j < curr_size; ++j) {
+        //         a[i][j] -= l_global[i][k_global] * u_global[k_global][j];
+        //     }
+        // }
+        // for(int ind =0 ; ind<(curr_size-k_global)*(curr_size-k_global); ind++){
+        //     int i = ind/(curr_size-k_global) + k_global+1;
+        //     int j = ind%(curr_size-k_global) + k_global+1;
+        //     a[i][j] -= l_global[i][k_global] * u_global[k_global][j];
+        // }
+        thread_handles4= (pthread_t*)malloc(num_threads * sizeof(pthread_t));
+        for(int thread=0; thread<num_threads; thread++) {
+            pthread_create(&thread_handles4[thread], NULL, assign_a, (void *) thread);
         }
+        for(int thread=0; thread<num_threads; thread++) {
+            pthread_join(thread_handles4[thread], NULL);
+        }
+        free(thread_handles4);
         // thread join loop3
     }
     // calculate L*U
