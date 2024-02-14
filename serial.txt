@@ -1,0 +1,44 @@
+size= 10
+calling lu_decomposition
+Computation time: 0 millisec for n =10
+L2,1 Norm: 1.05109e-14
+
+size= 100
+calling lu_decomposition
+Computation time: 1 millisec for n =100
+L2,1 Norm: 2.53588e-12
+
+size= 400
+calling lu_decomposition
+Computation time: 111 millisec for n =400
+L2,1 Norm: 5.47891e-11
+
+size= 700
+calling lu_decomposition
+Computation time: 565 millisec for n =700
+L2,1 Norm: 1.94016e-10
+
+size= 1400
+calling lu_decomposition
+Computation time: 4640 millisec for n =1400
+L2,1 Norm: 9.2393e-10
+
+size= 2100
+calling lu_decomposition
+Computation time: 15838 millisec for n =2100
+
+size= 2800
+calling lu_decomposition
+Computation time: 38369 millisec for n =2800
+
+size= 3500
+calling lu_decomposition
+Computation time: 110692 millisec for n =3500
+
+size= 4200
+calling lu_decomposition
+Computation time: 128834 millisec for n =4200
+
+size= 4900
+calling lu_decomposition
+Computation time: 207996 millisec for n =4900
