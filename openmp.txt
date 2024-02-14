@@ -79,14 +79,17 @@ size= 4900  num_threads= 4
 Computation time: 182820 milliseconds
 
 -------------------5600---------------------
+size= 5600  num_threads= 2
+Computation time: 360668 milliseconds
+
 size= 5600  num_threads= 4
 Computation time: 153619 milliseconds
 
 
 
+
 ___________________DYNAMIC(num_threads*2)____________________________________________________________________________
 -------------------700---------------------
-
 size= 700  num_threads= 2
 Computation time: 696 milliseconds
 
@@ -242,7 +245,6 @@ Computation time: 208691 milliseconds
 
 
 ________________STATIC(MIN 100)_______________________________________________________________________________________
-
 size= 100  num_threads= 4
 Computation time: 9 milliseconds
 
@@ -424,3 +426,25 @@ Computation time: 117925 milliseconds
 
 size= 5600  num_threads= 16
 Computation time: 110174 milliseconds
+
+----------------------6300---------------------
+size= 6300  num_threads= 2
+Computation time: 646389 milliseconds
+
+size= 6300  num_threads= 4
+Computation time: 407982 milliseconds
+
+size= 6300  num_threads= 6
+Computation time: 320475 milliseconds
+
+size= 6300  num_threads= 8
+Computation time: 271733 milliseconds
+
+size= 6300  num_threads= 10
+Computation time: 329370 milliseconds
+
+size= 6300  num_threads= 12
+Computation time: 284288 milliseconds
+
+size= 6300  num_threads= 16
+Computation time: 160501 milliseconds

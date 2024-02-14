@@ -50,14 +50,16 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
     // cout<<n<<"=n "<<endl;
     vector<vector<double>> l(n, vector<double>(n, 0.0));
     vector<vector<double>> u(n, vector<double>(n, 0.0));
+    int chunk= min(max(n/(num_threads), 2), 100);
+    // int chunk= min(n/(num_threads), 100);
 
     auto start = std::chrono::high_resolution_clock::now();
     // initialize u as an n x n matrix with 0s below the diagonal
     // initialize l as an n x n matrix with 1s on the diagonal and 0s above the diagonal
 
     // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
-    #pragma omp parallel for schedule(static, n/(num_threads))
-    // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+    // #pragma omp parallel for schedule(static, n/(num_threads))
+    #pragma omp parallel for schedule(static, chunk)
     // #pragma omp parallel for schedule(auto)
     // #pragma omp parallel for schedule(runtime)
     for(int i = 0; i < n; i++){
@@ -68,8 +70,8 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
     // thread start
 
     // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
-    #pragma omp parallel for schedule(static, n/(num_threads))
-    // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+    // #pragma omp parallel for schedule(static, n/(num_threads))
+    #pragma omp parallel for schedule(static, chunk)
     // #pragma omp parallel for schedule(auto)
     // #pragma omp parallel for schedule(runtime)
     for (int i = 0; i < n; ++i)
@@ -84,8 +86,8 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         // thread start
 
         // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
-        #pragma omp parallel for schedule(static, n/(num_threads))
-        // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+        // #pragma omp parallel for schedule(static, n/(num_threads))
+        #pragma omp parallel for schedule(static, chunk)
         // #pragma omp parallel for schedule(auto)
         // #pragma omp parallel for schedule(runtime)
         for (int i = k; i < n; ++i) {
@@ -107,8 +109,8 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
 
         // thread start
         // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
-        #pragma omp parallel for schedule(static, n/(num_threads))
-        // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+        // #pragma omp parallel for schedule(static, n/(num_threads))
+        #pragma omp parallel for schedule(static, chunk)
         // #pragma omp parallel for schedule(auto)
         // #pragma omp parallel for schedule(runtime)
         for (int i = 0; i < k; ++i)
@@ -119,8 +121,8 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         
         // thread start
         // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
-        #pragma omp parallel for schedule(static, n/(num_threads))
-        // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+        // #pragma omp parallel for schedule(static, n/(num_threads))
+        #pragma omp parallel for schedule(static, chunk)
         // #pragma omp parallel for schedule(auto)
         // #pragma omp parallel for schedule(runtime)
         for (int i = k + 1; i < n; ++i) {
@@ -133,8 +135,8 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         // thread start
         // #pragma omp parallel for schedule(dynamic, n*n/(num_threads*2))
         // #pragma omp parallel for schedule(static, ((n-k)*(n-k))/(num_threads))
-        #pragma omp parallel for schedule(static, n/(num_threads))
-        // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+        // #pragma omp parallel for schedule(static, n/(num_threads))
+        #pragma omp parallel for schedule(static, chunk)
         // #pragma omp parallel for schedule(auto)
         // #pragma omp parallel for schedule(runtime)
         for(int ind =0 ; ind<((n-k-1)*(n-k-1)); ind++){
