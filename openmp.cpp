@@ -45,23 +45,33 @@ inputs: a(n,n)
 // vector<int> pi(n);
 // vector<int> pi(n);
 vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& pi){
-    cout<<"calling lu decomposition"<<endl;
+    // cout<<"calling lu decomposition"<<endl;
     int n = a.size();
-    cout<<n<<"=n "<<endl;
+    // cout<<n<<"=n "<<endl;
     vector<vector<double>> l(n, vector<double>(n, 0.0));
     vector<vector<double>> u(n, vector<double>(n, 0.0));
 
     auto start = std::chrono::high_resolution_clock::now();
     // initialize u as an n x n matrix with 0s below the diagonal
     // initialize l as an n x n matrix with 1s on the diagonal and 0s above the diagonal
-    #pragma omp parallel for schedule(dynamic, n/(num_threads))
+
+    // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
+    #pragma omp parallel for schedule(static, n/(num_threads))
+    // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+    // #pragma omp parallel for schedule(auto)
+    // #pragma omp parallel for schedule(runtime)
     for(int i = 0; i < n; i++){
         l[i][i] = 1;
     }
 
     // Initialize π as a vector of length n
     // thread start
-    #pragma omp parallel for schedule(dynamic, n/(num_threads))
+
+    // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
+    #pragma omp parallel for schedule(static, n/(num_threads))
+    // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+    // #pragma omp parallel for schedule(auto)
+    // #pragma omp parallel for schedule(runtime)
     for (int i = 0; i < n; ++i)
         pi[i] = i;
     // thread join
@@ -70,8 +80,14 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         double max_val = 0;
         int k_prime = 0;
         // Find the maximum absolute value in column k
+
         // thread start
-        #pragma omp parallel for schedule(dynamic, n/(num_threads))
+
+        // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
+        #pragma omp parallel for schedule(static, n/(num_threads))
+        // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+        // #pragma omp parallel for schedule(auto)
+        // #pragma omp parallel for schedule(runtime)
         for (int i = k; i < n; ++i) {
             if (abs(a[i][k]) > max_val) {
                 max_val = abs(a[i][k]);
@@ -90,7 +106,11 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         // thread join
 
         // thread start
-        #pragma omp parallel for schedule(dynamic, n/(num_threads))
+        // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
+        #pragma omp parallel for schedule(static, n/(num_threads))
+        // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+        // #pragma omp parallel for schedule(auto)
+        // #pragma omp parallel for schedule(runtime)
         for (int i = 0; i < k; ++i)
             swap(l[k][i], l[k_prime][i]);
         // thread join
@@ -98,7 +118,11 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         u[k][k] = a[k][k];
         
         // thread start
-        #pragma omp parallel for schedule(dynamic, n/(num_threads))
+        // #pragma omp parallel for schedule(dynamic, n/(num_threads*2))
+        #pragma omp parallel for schedule(static, n/(num_threads))
+        // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+        // #pragma omp parallel for schedule(auto)
+        // #pragma omp parallel for schedule(runtime)
         for (int i = k + 1; i < n; ++i) {
             l[i][k] = a[i][k] / u[k][k];
             u[k][i] = a[k][i];
@@ -107,7 +131,12 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
         // thread join
         
         // thread start
-        #pragma omp parallel for schedule(dynamic, 10)
+        // #pragma omp parallel for schedule(dynamic, n*n/(num_threads*2))
+        // #pragma omp parallel for schedule(static, ((n-k)*(n-k))/(num_threads))
+        #pragma omp parallel for schedule(static, n/(num_threads))
+        // #pragma omp parallel for schedule(static, min(n/(num_threads), 100))
+        // #pragma omp parallel for schedule(auto)
+        // #pragma omp parallel for schedule(runtime)
         for(int ind =0 ; ind<((n-k-1)*(n-k-1)); ind++){
             int i = ind/(n-k-1) + k+1;
             int j = ind%(n-k-1) + k+1;
@@ -126,15 +155,15 @@ vector<vector<double>> lu_decomposition(vector<vector<double>> a, vector<int>& p
 
     // calculate L*U
     vector<vector<double>> lu(n, vector<double>(n, 0.0));
-    for(int i = 0; i < n; i++){
-        for(int j = 0; j < n; j++){
-            double sum = 0;
-            for(int k = 0; k < n; k++){
-                sum += l[i][k] * u[k][j];
-            }
-            lu[i][j] = sum;
-        }
-    }
+    // for(int i = 0; i < n; i++){
+    //     for(int j = 0; j < n; j++){
+    //         double sum = 0;
+    //         for(int k = 0; k < n; k++){
+    //             sum += l[i][k] * u[k][j];
+    //         }
+    //         lu[i][j] = sum;
+    //     }
+    // }
     return lu;
 }
 double computeL21Norm(const std::vector<std::vector<double>>& matrix) {
@@ -169,8 +198,7 @@ int main(int argc, char *argv[])  {
     // Convert command-line arguments to integers
     int size = std::atoi(argv[1]); // Size of the matrix
     num_threads = std::atoi(argv[2]); // Number of threads
-    cout<<"size= "<<size<<endl;
-    cout<<"num_threads= "<<num_threads<<endl;
+    cout<<"size= "<<size<<"  num_threads= "<<num_threads<<endl;
 
     // Set the number of threads to be used
     omp_set_num_threads(num_threads);
@@ -187,20 +215,20 @@ int main(int argc, char *argv[])  {
     }
     vector<int> pi(size);
     vector<vector<double>> L, U;
-    cout<<"before"<<endl;
+    // cout<<"before"<<endl;
     vector<vector<double>> luprod= lu_decomposition(A_original, pi);
     
-    vector<vector<double>> A_permuted(size, vector<double>(size, 0.0));
-    for (int i = 0; i < pi.size(); ++i) {
-            A_permuted[pi[i]] = luprod[i];
-    }
-    vector<vector<double>> diff(size, vector<double>(size, 0.0));
-    for(int i=0;i<size;i++){
-        for(int j=0;j<size;j++)
-            diff[i][j] = A_permuted[i][j]-A_original[i][j];
-    }
-    double l21Norm = computeL21Norm(diff);
-    std::cout << "L2,1 Norm: " << l21Norm << std::endl;
+    // vector<vector<double>> A_permuted(size, vector<double>(size, 0.0));
+    // for (int i = 0; i < pi.size(); ++i) {
+    //         A_permuted[pi[i]] = luprod[i];
+    // }
+    // vector<vector<double>> diff(size, vector<double>(size, 0.0));
+    // for(int i=0;i<size;i++){
+    //     for(int j=0;j<size;j++)
+    //         diff[i][j] = A_permuted[i][j]-A_original[i][j];
+    // }
+    // double l21Norm = computeL21Norm(diff);
+    // std::cout << "L2,1 Norm: " << l21Norm << std::endl;
 
     // Output results
     // cout << "pi :"<<endl;
