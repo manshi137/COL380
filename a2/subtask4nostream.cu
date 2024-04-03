@@ -76,6 +76,8 @@ __global__ void convolution1(float *input, float *kernel, float *output, int inp
     }
 }
 
+
+
 __global__ void conv2kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -425,7 +427,11 @@ int main() {
         for(int i=0; i< 500; i++){
             for(int j=0; j<50; j++){
                 // convolutionCUDA(pool2output + j*4*4, fc1Weights + i*4*4*50 + j*4*4, tmp6, 4, 4);
-                fc1(d_pool2output + j*4*4, d_fc1Weights + i*4*4*50 + j*4*4, d_tmp6 + i*50 + j, 4, 4);
+                // fc1(d_pool2output + j*4*4, d_fc1Weights + i*4*4*50 + j*4*4, d_tmp6 + i*50 + j, 4, 4);
+                dim3 blockSizefc1(16, 16);
+                dim3 gridSizefc1((4 + blockSizefc1.x - 1) / blockSizefc1.x, (4 + blockSizefc1.y - 1) / blockSizefc1.y);
+                fc1kernel<<<gridSizefc1, blockSizefc1, 0>>>(d_pool2output + j*4*4, d_fc1Weights + i*4*4*50 + j*4*4, d_tmp6 + i*50 + j , 4, 4);
+
                 
             }  
         }
@@ -433,6 +439,9 @@ int main() {
         int gridSize = (500 + blockSize - 1) / blockSize;
         computeFC1Output<<<gridSize, blockSize>>>(d_fc1Output, d_tmp6);
         // cudaMemcpy(fc1output, d_fc1Output, 500 * sizeof(float), cudaMemcpyDeviceToHost);
+        // for(int i=0; i<500; i++){
+        //     d_fc1Output[i]= d_fc1Output[i]+ fc1Bias[i];
+        // }
 
         // ----------------------------------relu---------------------------
         cout << "relu\n";
