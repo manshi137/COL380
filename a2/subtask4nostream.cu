@@ -288,23 +288,23 @@ int main() {
     float *fc1Bias = (float*)malloc(500*sizeof(float)); 
     float *fc1output = (float*)malloc(500 * sizeof(float));
     float *fc2Weights = (float*)malloc(10*1*1*500 * sizeof(float));
-    float *fc2Bias= (float*)malloc(10*sizeof(float)); 
+    float* fc2Bias= (float*)malloc(10*sizeof(float)); 
     float *fc2output = (float*)malloc(10 * sizeof(float));
     float *fc2softmaxoutput = (float*)malloc(10 * sizeof(float));
     
-    // memset(conv1Weights, 0, 20*5*5*1 * sizeof(float));
-    // memset(conv1Bias, 0, 20 * sizeof(float));
+    memset(conv1Weights, 0, 20*5*5*1 * sizeof(float));
+    memset(conv1Bias, 0, 20 * sizeof(float));
     memset(conv1output, 0, 20*24*24 * sizeof(float));
     memset(pool1output, 0, 20*12*12 * sizeof(float));
-    // memset(conv2Weights, 0, 50*5*5*20 * sizeof(float));
-    // memset(conv2Bias, 0, 50 * sizeof(float));
+    memset(conv2Weights, 0, 50*5*5*20 * sizeof(float));
+    memset(conv2Bias, 0, 50 * sizeof(float));
     memset(conv2output, 0, 50*8*8 * sizeof(float));
     memset(pool2output, 0, 50*4*4 * sizeof(float));
-    // memset(fc1Weights, 0, 500*4*4*50 * sizeof(float));
-    // memset(fc1Bias, 0, 500 * sizeof(float));
+    memset(fc1Weights, 0, 500*4*4*50 * sizeof(float));
+    memset(fc1Bias, 0, 500 * sizeof(float));
     memset(fc1output, 0, 500 * sizeof(float));
-    // memset(fc2Weights, 0, 10*1*1*500 * sizeof(float));
-    // memset(fc2Bias, 0, 10 * sizeof(float));
+    memset(fc2Weights, 0, 10*1*1*500 * sizeof(float));
+    memset(fc2Bias, 0, 10 * sizeof(float));
     memset(fc2output, 0, 10 * sizeof(float));
     memset(fc2softmaxoutput, 0, 10 * sizeof(float));
 
@@ -317,20 +317,6 @@ int main() {
     readKernelWeightsAndBiasconv2(conv2file, &conv2Weights, &conv2Bias);
     readFC1(fc1file, &fc1Weights, &fc1Bias);
     readFC2(fc2file, &fc2Weights, &fc2Bias);
-
-    float* d_conv1Weights;
-    cudaMalloc(&d_conv1Weights,  20*5*5*1 * sizeof(float));
-    cudaMemcpy(d_conv1Weights, conv1Weights,   20*5*5*1 * sizeof(float), cudaMemcpyHostToDevice);
-
-    float* d_conv2Weights;
-    cudaMalloc(&d_conv2Weights,  50*5*5*20 * sizeof(float));
-    cudaMemcpy(d_conv2Weights, conv2Weights,   50*5*5*20 * sizeof(float), cudaMemcpyHostToDevice);
-
-    float* d_fc1Weights;
-    cudaMalloc(&d_fc1Weights, 500*4*4*50 * sizeof(float));
-    cudaMemcpy(d_fc1Weights, fc1Weights,  500*4*4*50 * sizeof(float), cudaMemcpyHostToDevice);
-
-
 
     std::string folderPath = "testtext";
     std::vector<std::string> filePaths;
@@ -353,12 +339,39 @@ int main() {
 
     closedir(dir);
 
+    float* d_conv1Weights;
+    cudaMalloc(&d_conv1Weights,  20*5*5*1 * sizeof(float));
+    float* image = (float*)malloc(28 * 28 * sizeof(float));
+    float* d_image;
+    float* d_conv1output;
+    cudaMalloc(&d_conv1output, 20*24*24* sizeof(float));
+
+    float* d_conv2Weights;
+    cudaMalloc(&d_conv2Weights,  50*5*5*20 * sizeof(float));
+    float* d_pool1output;
+    cudaMalloc(&d_pool1output,  20*12*12 * sizeof(float));
+        float* tmp = (float*)malloc(8*8* sizeof(float));
+    float* tmp2 = (float*)malloc(8*8* sizeof(float));
+
+        float* d_conv2output;
+    cudaMalloc(&d_conv2output,  50*8*8 * sizeof(float));
+        float* d_fc1Weights;
+    cudaMalloc(&d_fc1Weights, 500*4*4*50 * sizeof(float));
+    float* d_pool2output;
+    cudaMalloc(&d_pool2output,  50*4*4 * sizeof(float));
+
+    float* tmp4 = (float*)malloc(1*1* sizeof(float));
+    float* tmp6 = (float*)malloc(1*1* sizeof(float));
+    float *fc1reluoutput = (float*)malloc(500 * sizeof(float));
+
+        float* tmp3 = (float*)malloc(1*1* sizeof(float));
+    float* tmp5 = (float*)malloc(1*1* sizeof(float));
+
     for (int x=0;x<filePaths.size();x++) {
         clock_t start1, stop1;	
         start1 = clock();
         total = total+1;
-        float* image = (float*)malloc(28 * 28 * sizeof(float));
-        float* d_image;
+       
         cout << "Processing file: " << filePaths[x] << endl;
         readImage(filePaths[x], &image);
         cudaMalloc(&d_image, conv1InputSize * conv1InputSize * sizeof(float));
@@ -372,7 +385,10 @@ int main() {
     //     cudaStreamCreate(&streams[i]);
     // }
     cout<<"conv1\n";
-   
+
+    cudaMemcpy(d_conv1Weights, conv1Weights,   20*5*5*1 * sizeof(float), cudaMemcpyHostToDevice);
+
+
 
     for(int i=0; i<conv1numkernel; i++){
         convolutionCUDA1(d_image, d_conv1Weights + i*convkernelSize*convkernelSize, conv1output + i*24*24, conv1InputSize, convkernelSize);
@@ -380,7 +396,7 @@ int main() {
             conv1output[i*24*24 + j] += conv1Bias[i];
         }
     }
-    cudaFree(d_image);
+    // cudaFree(d_image);
     // cudaFree(d_conv1Weights);
 
     // print conv1 output
@@ -399,15 +415,14 @@ int main() {
 
     cout<<"pool1\n";
 
-    float* d_conv1output;
-    cudaMalloc(&d_conv1output, 20*24*24* sizeof(float));
+
     cudaMemcpy(d_conv1output, conv1output,  20*24*24 * sizeof(float), cudaMemcpyHostToDevice);
 
 
     for(int i=0; i<conv1numkernel; i++){
         maxPoolingCUDA(d_conv1output + i*24*24, pool1output + i*12*12, 24, poolSize);
     }
-    cudaFree(d_conv1output);
+    // cudaFree(d_conv1output);
     // print pool1 output
     // cout << "Pool1 output:" << endl;
     // for(int i=0; i<20; i++){
@@ -422,17 +437,11 @@ int main() {
 
     // ------------------conv2---------------------
     cout<<"conv2\n";
-
-    
-
-
-    float* d_pool1output;
-    cudaMalloc(&d_pool1output,  20*12*12 * sizeof(float));
+    cudaMemcpy(d_conv2Weights, conv2Weights,   50*5*5*20 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_pool1output, pool1output,   20*12*12 * sizeof(float), cudaMemcpyHostToDevice);
 
 
-    float* tmp = (float*)malloc(8*8* sizeof(float));
-    float* tmp2 = (float*)malloc(8*8* sizeof(float));
+
     for(int i=0; i< 50; i++){
         for (int p = 0; p < 64; ++p) {
             tmp[p] = 0.0f;
@@ -457,10 +466,10 @@ int main() {
             conv2output[i*8*8+j] = tmp[j];
         }
     }
-    cudaFree(d_pool1output);
+    // cudaFree(d_pool1output);
     // cudaFree(d_conv2Weights);
-    free(tmp);
-    free(tmp2);
+    // free(tmp);
+    // free(tmp2);
     
     // cout << "Conv2 output:" << endl;
     // for(int i=0; i<50; i++){
@@ -477,15 +486,14 @@ int main() {
     // ------------------pool2---------------------
     cout<<"pool2\n";
 
-    float* d_conv2output;
-    cudaMalloc(&d_conv2output,  50*8*8 * sizeof(float));
+
     cudaMemcpy(d_conv2output, conv2output,   50*8*8 * sizeof(float), cudaMemcpyHostToDevice);
 
 
     for(int i=0; i<conv2numkernel; i++){
         maxPoolingCUDA(d_conv2output + i*8*8, pool2output + i*4*4, 8, poolSize);
     }
-    cudaFree(d_conv2output);
+    // cudaFree(d_conv2output);
     // print pool2 output
     // cout << "Pool2 output:" << endl;
     // for(int i=0; i<50; i++){
@@ -502,14 +510,10 @@ int main() {
     // ------------------fc1---------------------
     cout<<"fc1\n";
     
+    cudaMemcpy(d_fc1Weights, fc1Weights,  500*4*4*50 * sizeof(float), cudaMemcpyHostToDevice);
 
-
-    float* d_pool2output;
-    cudaMalloc(&d_pool2output,  50*4*4 * sizeof(float));
     cudaMemcpy(d_pool2output, pool2output,  50*4*4 * sizeof(float), cudaMemcpyHostToDevice);
 
-    float* tmp4 = (float*)malloc(1*1* sizeof(float));
-    float* tmp6 = (float*)malloc(1*1* sizeof(float));
     for(int i=0; i< 500; i++){
             for (int p = 0; p < 1; ++p) {
                 tmp4[p] = 0.0f;
@@ -532,17 +536,18 @@ int main() {
                 fc1output[i*1*1+j] = tmp4[j];
             }
         }
-    cudaFree(d_pool2output);
+    // cudaFree(d_pool2output);
     // cudaFree(d_fc1Weights);
-    free(tmp6);
-    free(tmp4);
+    // free(tmp6);
+    // free(tmp4);
 
     // cout << "FC1 output:" << endl;
     // for(int i=0; i<fc1OutputChannel; i++){
     //     cout << fc1output[i] << " ";
     // }
+    // ----------------------------------relu---------------------------
     cout    << "relu\n";
-    float *fc1reluoutput = (float*)malloc(500 * sizeof(float));
+    
     reluCUDA(fc1output, fc1reluoutput, 1, 500);
 
     // cout << "\n";
@@ -555,8 +560,7 @@ int main() {
 
     // ------------------fc2---------------------
     cout<<"fc2\n";
-    float* tmp3 = (float*)malloc(1*1* sizeof(float));
-    float* tmp5 = (float*)malloc(1*1* sizeof(float));
+
     for(int i=0; i< 10; i++){
         for (int p = 0; p < 1; ++p) {
             tmp3[p] = 0.0f;
@@ -583,8 +587,8 @@ int main() {
         }
     }
 
-    free(tmp5);
-    free(tmp3);
+    // free(tmp5);
+    // free(tmp3);
     // cout << "FC2 output:" << endl;
     // for(int i=0; i<10; i++){
     //     cout << fc2output[i] << " ";
@@ -618,7 +622,7 @@ int main() {
     float time_taken1 = (float) (stop1-start1)/(CLOCKS_PER_SEC) ;
     cout << "Time taken: " << time_taken1 << " seconds" << endl;
     cout << "correct: " << correct << " total: " << total << endl;
-    free(image);
+    // free(image);
 }
     stop = clock();
     float time_taken = (float) (stop-start)/(CLOCKS_PER_SEC) ;
