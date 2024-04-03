@@ -143,19 +143,19 @@ __global__ void maxPoolingKernel(float *input, float *output, int inputSize, int
 }
 
 
-void maxPoolingCUDA(float* d_input, float* output, int inputSize, int poolSize) {
+void maxPoolingCUDA(float* d_input, float* d_output, int inputSize, int poolSize) {
     int outputSize = inputSize / poolSize;
 
-    float *d_output;
-    cudaMalloc(&d_output, outputSize * outputSize * sizeof(float));
+    // float *d_output;
+    // cudaMalloc(&d_output, outputSize * outputSize * sizeof(float));
 
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     dim3 gridSize((inputSize + BLOCK_SIZE - 1) / BLOCK_SIZE, (inputSize + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
     maxPoolingKernel<<<gridSize, blockSize>>>(d_input, d_output, inputSize, poolSize);
 
-    cudaMemcpy(output, d_output, outputSize * outputSize * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaFree(d_output);
+    // cudaMemcpy(output, d_output, outputSize * outputSize * sizeof(float), cudaMemcpyDeviceToHost);
+    // cudaFree(d_output);
 }
 
 __global__ void reluKernel(float *input, float *output, int rows, int cols) {
@@ -168,13 +168,13 @@ __global__ void reluKernel(float *input, float *output, int rows, int cols) {
     }
 }
 
-void reluCUDA(float *input, float *output, int rows, int cols) {
-    float *d_input, *d_output;
+void reluCUDA(float *d_input, float *output, int rows, int cols) {
+    float  *d_output;
 
-    cudaMalloc(&d_input, rows * cols * sizeof(float));
+    // cudaMalloc(&d_input, rows * cols * sizeof(float));
     cudaMalloc(&d_output, rows * cols * sizeof(float));
 
-    cudaMemcpy(d_input, input, rows * cols * sizeof(float), cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_input, input, rows * cols * sizeof(float), cudaMemcpyHostToDevice);
 
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     dim3 gridSize((cols + BLOCK_SIZE - 1) / BLOCK_SIZE, (rows + BLOCK_SIZE - 1) / BLOCK_SIZE);
@@ -183,7 +183,7 @@ void reluCUDA(float *input, float *output, int rows, int cols) {
 
     cudaMemcpy(output, d_output, rows * cols * sizeof(float), cudaMemcpyDeviceToHost);
 
-    cudaFree(d_input);
+    // cudaFree(d_input);
     cudaFree(d_output);
 }
 
@@ -353,12 +353,13 @@ int main() {
     float *fc1reluoutput = (float*)malloc(500 * sizeof(float));
     float* tmp3 = (float*)malloc(1*1* sizeof(float));
     float* tmp5 = (float*)malloc(1*1* sizeof(float));
-    float *d_outputconv1;
-    cudaMalloc(&d_outputconv1, conv1OutputSize * conv1OutputSize * sizeof(float));
+
     float *d_fc1Output, *d_tmp6;
     cudaMalloc(&d_fc1Output, 500 * sizeof(float));
     cudaMalloc(&d_tmp6, 500 * 50 * sizeof(float)); // Assuming 500 elements per 50 elements
     cudaMemcpy(d_fc1Weights, fc1Weights,  500*4*4*50 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_conv1Weights, conv1Weights,   20*5*5*1 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_conv2Weights, conv2Weights,   50*5*5*20 * sizeof(float), cudaMemcpyHostToDevice);
 
     for (int x=0;x<filePaths.size();x++) {
         clock_t start1, stop1;	
@@ -370,51 +371,23 @@ int main() {
         // ------------------conv1---------------------
         cout<<"conv1\n";
 
-        cudaMemcpy(d_conv1Weights, conv1Weights,   20*5*5*1 * sizeof(float), cudaMemcpyHostToDevice);
-
         for(int i=0; i<conv1numkernel; i++){
-            // convolutionCUDA1(d_image, d_conv1Weights + i*convkernelSize*convkernelSize, conv1output + i*24*24, conv1InputSize, convkernelSize);
             dim3 blockSize(16, 16);
             dim3 gridSize((conv1InputSize + blockSize.x - 1) / blockSize.x, (conv1InputSize + blockSize.y - 1) / blockSize.y);
-            convolution1<<<gridSize, blockSize, 0>>>(d_image, d_conv1Weights + i*convkernelSize*convkernelSize, d_outputconv1, conv1InputSize, convkernelSize, conv1Bias[i]);
-            cudaMemcpy(conv1output + i*24*24, d_outputconv1, conv1OutputSize * conv1OutputSize * sizeof(float), cudaMemcpyDeviceToHost);
+            convolution1<<<gridSize, blockSize, 0>>>(d_image, d_conv1Weights + i*convkernelSize*convkernelSize, d_conv1output + i*24*24 , conv1InputSize, convkernelSize, conv1Bias[i]);
+            // cudaMemcpy(conv1output + i*24*24, d_conv1output, conv1OutputSize * conv1OutputSize * sizeof(float), cudaMemcpyDeviceToHost);
         }
-        // print conv1 output
-        // cout << "Conv1 output:" << endl;
-        // for(int i=0; i<20; i++){
-        //     cout << "Filter " << i + 1 << ":" << endl;
-        //     for(int j=0; j<24; j++){
-        //         for(int k=0; k<24; k++){
-        //             cout<< conv1output[i*24*24 + j*24 + k]<<" ";
-        //         }
-        //         cout<<"\n";
-        //     }
-        // }
 
         // ------------------pool1---------------------
         cout<<"pool1\n";
-        cudaMemcpy(d_conv1output, conv1output,  20*24*24 * sizeof(float), cudaMemcpyHostToDevice);
+        // cudaMemcpy(d_conv1output, conv1output,  20*24*24 * sizeof(float), cudaMemcpyHostToDevice);
 
         for(int i=0; i<conv1numkernel; i++){
-            maxPoolingCUDA(d_conv1output + i*24*24, pool1output + i*12*12, 24, poolSize);
+            maxPoolingCUDA(d_conv1output + i*24*24, d_pool1output + i*12*12, 24, poolSize);
         }
-
-        // print pool1 output
-        // cout << "Pool1 output:" << endl;
-        // for(int i=0; i<20; i++){
-        //     cout << "Filter " << i + 1 << ":" << endl;
-        //     for(int j=0; j<12; j++){
-        //         for(int k=0; k<12; k++){
-        //             cout<< pool1output[i*12*12 + j*12 + k]<<" ";
-        //         }
-        //         cout<<"\n";
-        //     }
-        // }
-
         // ------------------conv2---------------------
         cout<<"conv2\n";
-        cudaMemcpy(d_conv2Weights, conv2Weights,   50*5*5*20 * sizeof(float), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_pool1output, pool1output,   20*12*12 * sizeof(float), cudaMemcpyHostToDevice);
+        // cudaMemcpy(d_pool1output, pool1output,   20*12*12 * sizeof(float), cudaMemcpyHostToDevice);
 
         for(int i=0; i< 50; i++){
             for (int p = 0; p < 64; ++p) {
@@ -424,7 +397,6 @@ int main() {
                 for (int p = 0; p < 64; ++p) {
                     tmp2[p] = 0.0f;
                 }
-                // convolutionCUDA(pool1output + j*12*12, conv2Weights + i*5*5*20 + j*5*5, tmp2, 12, 5);
                 conv2(d_pool1output + j*12*12, d_conv2Weights + i*5*5*20 + j*5*5, tmp2, 12, 5);
                 // add tmp2 in tmp1
                 for(int k=0; k<8*8; k++){
@@ -438,38 +410,17 @@ int main() {
                 conv2output[i*8*8+j] = tmp[j];
             }
         }     
-        // cout << "Conv2 output:" << endl;
-        // for(int i=0; i<50; i++){
-        //     cout << "Filter " << i + 1 << ":" << endl;
-        //     for(int j=0; j<8; j++){
-        //         for(int k=0; k<8; k++){
-        //             cout<< conv2output[i*8*8 + j*8 + k]<<" ";
-        //         }
-        //         cout<<"\n";
-        //     }
-        // }
         // ------------------pool2---------------------
         cout<<"pool2\n";
         cudaMemcpy(d_conv2output, conv2output,   50*8*8 * sizeof(float), cudaMemcpyHostToDevice);
 
         for(int i=0; i<conv2numkernel; i++){
-            maxPoolingCUDA(d_conv2output + i*8*8, pool2output + i*4*4, 8, poolSize);
+            maxPoolingCUDA(d_conv2output + i*8*8, d_pool2output + i*4*4, 8, poolSize);
         }
-        // print pool2 output
-        // cout << "Pool2 output:" << endl;
-        // for(int i=0; i<50; i++){
-        //     cout << "Filter " << i + 1 << ":" << endl;
-        //     for(int j=0; j<4; j++){
-        //         for(int k=0; k<4; k++){
-        //             cout<< pool2output[i*4*4 + j*4 + k]<<" ";
-        //         }
-        //         cout<<"\n";
-        //     }
-        // }
         // ------------------fc1---------------------
         cout<<"fc1 --\n";
         
-        cudaMemcpy(d_pool2output, pool2output,  50*4*4 * sizeof(float), cudaMemcpyHostToDevice);
+        // cudaMemcpy(d_pool2output, pool2output,  50*4*4 * sizeof(float), cudaMemcpyHostToDevice);
 
         for(int i=0; i< 500; i++){
             for(int j=0; j<50; j++){
@@ -478,70 +429,27 @@ int main() {
                 
             }  
         }
-        // cudaMemcpy(d_tmp6, tmp6, 500 * 50 * sizeof(float), cudaMemcpyHostToDevice);
-
         int blockSize = 256;
         int gridSize = (500 + blockSize - 1) / blockSize;
         computeFC1Output<<<gridSize, blockSize>>>(d_fc1Output, d_tmp6);
-
-        cudaMemcpy(fc1output, d_fc1Output, 500 * sizeof(float), cudaMemcpyDeviceToHost);
-
-
-        // for(int i=0; i<500; i++){
-        //     fc1output[i*1*1] =  fxc1Bias[i];
-        //     for(int j=0; j<50; j++){
-        //         fc1output[i*1*1] += tmp6[i*50 + j];
-        //     }
-        // }
-
-        // cout << "FC1 output:" << endl;
-        // for(int i=0; i<fc1OutputChannel; i++){
-        //     cout << fc1output[i] << " ";
-        // }
+        // cudaMemcpy(fc1output, d_fc1Output, 500 * sizeof(float), cudaMemcpyDeviceToHost);
 
         // ----------------------------------relu---------------------------
-        cout    << "relu\n";
-        reluCUDA(fc1output, fc1reluoutput, 1, 500);
-        // cout << "\n";
-        // cout << "FC1 relu output:" << endl;
-        // for(int i=0; i<fc1OutputChannel; i++){
-        //     cout << fc1reluoutput[i] << " ";
-        // }
-        // cout << "\n";
-    
+        cout << "relu\n";
+        reluCUDA(d_fc1Output, fc1reluoutput, 1, 500);
         // ------------------fc2---------------------
         cout<<"fc2\n";
 
         for(int i=0; i< 10; i++){
-            // for (int p = 0; p < 1; ++p) {
-                tmp3[0] = 0.0f;
-            // }
-            // cout<<"\nhere i = "<<i<<"\n";
+            tmp3[0] = 0.0f;
             for(int j=0; j<500; j++){
-                // for (int p = 0; p < 1; ++p) {
-                //     tmp5[p] = 0.0f;
-                // }
                 // convolutionCUDA(fc1reluoutput + j*1*1, fc2Weights + i*1*1*500 + j*1*1, tmp5, 1,1);
                 tmp3[0]+= fc1reluoutput[j]*fc2Weights[i*1*1*500 + j*1*1];
-                // add tmp5 in tmp1
-                // for(int k=0; k<1*1; k++){
-                //     tmp3[k] += tmp5[k];
-                // }
             }
             
-            // for(int j=0; j<1*1; j++){
             tmp3[0] += fc2Bias[i];
-            // }
-            // for(int j=0; j<1*1; j++){
-                fc2output[i*1*1] = tmp3[0];
-                // cout<< fc2output[i*1*1+j]<<" ";
-            // }
+            fc2output[i*1*1] = tmp3[0];
         }
-        // cout << "FC2 output:" << endl;
-        // for(int i=0; i<10; i++){
-        //     cout << fc2output[i] << " ";
-        // }
-
         // ------------------softmax---------------------
         cout<<"softmax\n";
         softmaxCUDA(fc2output, fc2softmaxoutput, 10);
