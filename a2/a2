@@ -9,52 +9,41 @@
 #define BLOCK_SIZE 32
 using namespace std;
 
-__global__ void computeFC1Output(float* d_fc1Output, float* d_tmp6) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid < 500) {
-        d_fc1Output[tid] = 0.0f;
-        for (int j = 0; j < 50; ++j) {
-            d_fc1Output[tid] += d_tmp6[tid * 50 + j];
-        }
-    }
-} 
 
-__global__ void fc1kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
+__global__ void fc1kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize, float bias) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int outputSize = inputSize - kernelSize +1;
-    float sum = 0.0f;
-    int i,j;
+
     if (col < outputSize && row < outputSize) {
-        sum = 0.0f;
-        // __shared__ float sharedInput[4][4];
-        // __shared__ float sharedKernel[4][4];
-        for (i = 0; i < kernelSize; ++i) {
-            for (j = 0; j < kernelSize; ++j) {
-                // sharedInput[i][j] = input[(row + i) * inputSize + (col + j)];
-                // sharedKernel[i][j] = kernel[i * kernelSize + j];
-                // __syncthreads();
-                // sum += sharedInput[i][j] * sharedKernel[i][j];
-                sum += input[(row + i) * inputSize + (col + j)] * kernel[i * kernelSize + j];
+        float sum = 0.0f;
+        __shared__ float sharedInput[4][4];
+        __shared__ float sharedKernel[4][4];
+        for (int i = 0; i < kernelSize; ++i) {
+            for (int j = 0; j < kernelSize; ++j) {
+                sharedInput[i][j] = input[(row + i) * inputSize + (col + j)];
+                sharedKernel[i][j] = kernel[i * kernelSize + j];
+                __syncthreads();
+                sum += sharedInput[i][j] * sharedKernel[i][j];
             }
         }
-        // __syncthreads();
-        output[row * outputSize + col] = sum;
+        __syncthreads();
+        output[row * outputSize + col] = sum + bias;
     }
 }
 
-void fc1(float *d_input, float *d_kernel, float *d_output, int inputSize, int kernelSize) {
-    // float *d_output;
+void fc1(float *d_input, float *d_kernel, float *output, int inputSize, int kernelSize, float bias) {
+    float *d_output;
     int outputSize = inputSize - kernelSize +1;
-    // cudaMalloc(&d_output, outputSize * outputSize * sizeof(float));
+    cudaMalloc(&d_output, outputSize * outputSize * sizeof(float));
 
     dim3 blockSize(16, 16);
     dim3 gridSize((inputSize + blockSize.x - 1) / blockSize.x, (inputSize + blockSize.y - 1) / blockSize.y);
 
-    fc1kernel<<<gridSize, blockSize, 0>>>(d_input, d_kernel, d_output, inputSize, kernelSize);
+    fc1kernel<<<gridSize, blockSize, 0>>>(d_input, d_kernel, d_output, inputSize, kernelSize, bias);
 
-    // cudaMemcpy(output, d_output, outputSize * outputSize * sizeof(float), cudaMemcpyDeviceToHost);
-    // cudaFree(d_output);
+    cudaMemcpy(output, d_output, outputSize * outputSize * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(d_output);
 }
 
 
@@ -76,7 +65,7 @@ __global__ void convolution1(float *input, float *kernel, float *output, int inp
     }
 }
 
-__global__ void conv2kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
+__global__ void conv2kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize, float bias) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int outputSize = inputSize - kernelSize +1;
@@ -90,17 +79,15 @@ __global__ void conv2kernel(float *input, float *kernel, float *output, int inpu
                 sharedInput[threadIdx.y+i][threadIdx.x+j] = input[(row + i) * inputSize + (col + j)];
                 sharedKernel[i][j] = kernel[i * kernelSize + j];
                 __syncthreads();
-                // int inputIdx = (row + i) * inputSize + (col + j);
-                // sum += input[inputIdx] * sharedKernel[i][j];
                 sum+= sharedInput[threadIdx.y+i][threadIdx.x+j]*sharedKernel[i][j];
             }
         }
         __syncthreads();
-        output[row * outputSize + col] = sum;
+        output[row * outputSize + col] = sum + bias;
     }
 }
 
-void conv2(float *d_input, float *d_kernel, float *output, int inputSize, int kernelSize) {
+void conv2(float *d_input, float *d_kernel, float *output, int inputSize, int kernelSize, float bias) {
     float *d_output;
     int outputSize = inputSize - kernelSize +1;
     cudaMalloc(&d_output, outputSize * outputSize * sizeof(float));
@@ -108,7 +95,7 @@ void conv2(float *d_input, float *d_kernel, float *output, int inputSize, int ke
     dim3 blockSize(16, 16);
     dim3 gridSize((inputSize + blockSize.x - 1) / blockSize.x, (inputSize + blockSize.y - 1) / blockSize.y);
 
-    conv2kernel<<<gridSize, blockSize, 0>>>(d_input, d_kernel, d_output, inputSize, kernelSize);
+    conv2kernel<<<gridSize, blockSize, 0>>>(d_input, d_kernel, d_output, inputSize, kernelSize, bias);
 
     cudaMemcpy(output, d_output, outputSize * outputSize * sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -349,16 +336,12 @@ int main() {
     float* d_pool2output;
     cudaMalloc(&d_pool2output,  50*4*4 * sizeof(float));
     float* tmp4 = (float*)malloc(1*1* sizeof(float));
-    float* tmp6 = (float*)malloc(500*50*1*1* sizeof(float));
+    float* tmp6 = (float*)malloc(1*1* sizeof(float));
     float *fc1reluoutput = (float*)malloc(500 * sizeof(float));
     float* tmp3 = (float*)malloc(1*1* sizeof(float));
     float* tmp5 = (float*)malloc(1*1* sizeof(float));
     float *d_outputconv1;
     cudaMalloc(&d_outputconv1, conv1OutputSize * conv1OutputSize * sizeof(float));
-    float *d_fc1Output, *d_tmp6;
-    cudaMalloc(&d_fc1Output, 500 * sizeof(float));
-    cudaMalloc(&d_tmp6, 500 * 50 * sizeof(float)); // Assuming 500 elements per 50 elements
-    cudaMemcpy(d_fc1Weights, fc1Weights,  500*4*4*50 * sizeof(float), cudaMemcpyHostToDevice);
 
     for (int x=0;x<filePaths.size();x++) {
         clock_t start1, stop1;	
@@ -379,6 +362,7 @@ int main() {
             convolution1<<<gridSize, blockSize, 0>>>(d_image, d_conv1Weights + i*convkernelSize*convkernelSize, d_outputconv1, conv1InputSize, convkernelSize, conv1Bias[i]);
             cudaMemcpy(conv1output + i*24*24, d_outputconv1, conv1OutputSize * conv1OutputSize * sizeof(float), cudaMemcpyDeviceToHost);
         }
+
         // print conv1 output
         // cout << "Conv1 output:" << endl;
         // for(int i=0; i<20; i++){
@@ -425,14 +409,11 @@ int main() {
                     tmp2[p] = 0.0f;
                 }
                 // convolutionCUDA(pool1output + j*12*12, conv2Weights + i*5*5*20 + j*5*5, tmp2, 12, 5);
-                conv2(d_pool1output + j*12*12, d_conv2Weights + i*5*5*20 + j*5*5, tmp2, 12, 5);
+                conv2(d_pool1output + j*12*12, d_conv2Weights + i*5*5*20 + j*5*5, tmp2, 12, 5, conv2Bias[i]);
                 // add tmp2 in tmp1
                 for(int k=0; k<8*8; k++){
                     tmp[k] += tmp2[k];
                 }
-            }
-            for(int j=0; j<8*8; j++){
-                tmp[j] += conv2Bias[i];
             }
             for(int j=0; j<8*8; j++){
                 conv2output[i*8*8+j] = tmp[j];
@@ -467,32 +448,32 @@ int main() {
         //     }
         // }
         // ------------------fc1---------------------
-        cout<<"fc1 --\n";
-        
+        cout<<"fc1\n";
+        cudaMemcpy(d_fc1Weights, fc1Weights,  500*4*4*50 * sizeof(float), cudaMemcpyHostToDevice);
         cudaMemcpy(d_pool2output, pool2output,  50*4*4 * sizeof(float), cudaMemcpyHostToDevice);
 
         for(int i=0; i< 500; i++){
-            for(int j=0; j<50; j++){
-                // convolutionCUDA(pool2output + j*4*4, fc1Weights + i*4*4*50 + j*4*4, tmp6, 4, 4);
-                fc1(d_pool2output + j*4*4, d_fc1Weights + i*4*4*50 + j*4*4, d_tmp6 + i*50 + j, 4, 4);
-                
-            }  
-        }
-        // cudaMemcpy(d_tmp6, tmp6, 500 * 50 * sizeof(float), cudaMemcpyHostToDevice);
-
-        int blockSize = 256;
-        int gridSize = (500 + blockSize - 1) / blockSize;
-        computeFC1Output<<<gridSize, blockSize>>>(d_fc1Output, d_tmp6);
-
-        cudaMemcpy(fc1output, d_fc1Output, 500 * sizeof(float), cudaMemcpyDeviceToHost);
-
-
-        // for(int i=0; i<500; i++){
-        //     fc1output[i*1*1] =  fxc1Bias[i];
-        //     for(int j=0; j<50; j++){
-        //         fc1output[i*1*1] += tmp6[i*50 + j];
-        //     }
-        // }
+                for (int p = 0; p < 1; ++p) {
+                    tmp4[p] = 0.0f;
+                }
+                for(int j=0; j<50; j++){ 
+                    for (int p = 0; p < 1; ++p) {
+                        tmp6[p] = 0.0f;
+                    }
+                    // convolutionCUDA(pool2output + j*4*4, fc1Weights + i*4*4*50 + j*4*4, tmp6, 4, 4);
+                    fc1(d_pool2output + j*4*4, d_fc1Weights + i*4*4*50 + j*4*4, tmp6, 4, 4 , fc1Bias[i]);
+                    // add tmp6 in tmp1
+                    for(int k=0; k<1*1; k++){
+                        tmp4[k] += tmp6[k];
+                    }
+                }
+                // for(int j=0; j<1*1; j++){
+                //     tmp4[j] += fc1Bias[i];
+                // }
+                for(int j=0; j<1*1; j++){
+                    fc1output[i*1*1+j] = tmp4[j];
+                }
+            }
 
         // cout << "FC1 output:" << endl;
         // for(int i=0; i<fc1OutputChannel; i++){
@@ -508,34 +489,33 @@ int main() {
         //     cout << fc1reluoutput[i] << " ";
         // }
         // cout << "\n";
-    
         // ------------------fc2---------------------
         cout<<"fc2\n";
 
         for(int i=0; i< 10; i++){
-            // for (int p = 0; p < 1; ++p) {
-                tmp3[0] = 0.0f;
-            // }
+            for (int p = 0; p < 1; ++p) {
+                tmp3[p] = 0.0f;
+            }
             // cout<<"\nhere i = "<<i<<"\n";
             for(int j=0; j<500; j++){
-                // for (int p = 0; p < 1; ++p) {
-                //     tmp5[p] = 0.0f;
-                // }
+                for (int p = 0; p < 1; ++p) {
+                    tmp5[p] = 0.0f;
+                }
                 // convolutionCUDA(fc1reluoutput + j*1*1, fc2Weights + i*1*1*500 + j*1*1, tmp5, 1,1);
-                tmp3[0]+= fc1reluoutput[j]*fc2Weights[i*1*1*500 + j*1*1];
+                tmp5[0]= fc1reluoutput[j]*fc2Weights[i*1*1*500 + j*1*1];
                 // add tmp5 in tmp1
-                // for(int k=0; k<1*1; k++){
-                //     tmp3[k] += tmp5[k];
-                // }
+                for(int k=0; k<1*1; k++){
+                    tmp3[k] += tmp5[k];
+                }
             }
             
-            // for(int j=0; j<1*1; j++){
-            tmp3[0] += fc2Bias[i];
-            // }
-            // for(int j=0; j<1*1; j++){
-                fc2output[i*1*1] = tmp3[0];
+            for(int j=0; j<1*1; j++){
+                tmp3[j] += fc2Bias[i];
+            }
+            for(int j=0; j<1*1; j++){
+                fc2output[i*1*1+j] = tmp3[j];
                 // cout<< fc2output[i*1*1+j]<<" ";
-            // }
+            }
         }
         // cout << "FC2 output:" << endl;
         // for(int i=0; i<10; i++){
