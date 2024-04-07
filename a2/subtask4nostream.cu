@@ -23,24 +23,17 @@ __global__ void computeFC1Output(float* d_fc1Output, float* d_tmp6, float* bias)
 __global__ void fc1kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int outputSize = inputSize - kernelSize +1;
-    float sum = 0.0f;
-    int i,j;
-    if (col < outputSize && row < outputSize) {
-        sum = 0.0f;
-        // __shared__ float sharedInput[4][4];
-        // __shared__ float sharedKernel[4][4];
-        for (i = 0; i < kernelSize; ++i) {
-            for (j = 0; j < kernelSize; ++j) {
-                // sharedInput[i][j] = input[(row + i) * inputSize + (col + j)];
-                // sharedKernel[i][j] = kernel[i * kernelSize + j];
-                // __syncthreads();
-                // sum += sharedInput[i][j] * sharedKernel[i][j];
-                sum += input[(row + i) * inputSize + (col + j)] * kernel[i * kernelSize + j];
+    int index = row*8 + col;
+    int startOffset = index*4*4;
+    if (index< 50){
+        float sum = 0.0f;
+        for(int i=0; i<kernelSize; i++){
+            for(int j=0; j<kernelSize; j++){
+                // sum += input[i*4 + j] * kernel[i*4 + j];
+                sum += input[startOffset + i*kernelSize + j] * kernel[startOffset + i*kernelSize + j];
             }
         }
-        // __syncthreads();
-        output[row * outputSize + col] = sum;
+        output[index] = sum;
     }
 }
 
@@ -158,11 +151,11 @@ __global__ void reluKernel(float *input, float *output, int rows, int cols) {
     }
 }
 
-void reluCUDA(float *d_input, float *output, int rows, int cols) {
-    float  *d_output;
+void reluCUDA(float *d_input, float *d_output, int rows, int cols) {
+    // float  *d_output;
 
     // cudaMalloc(&d_input, rows * cols * sizeof(float));
-    cudaMalloc(&d_output, rows * cols * sizeof(float));
+    // cudaMalloc(&d_output, rows * cols * sizeof(float));
 
     // cudaMemcpy(d_input, input, rows * cols * sizeof(float), cudaMemcpyHostToDevice);
 
@@ -171,10 +164,10 @@ void reluCUDA(float *d_input, float *output, int rows, int cols) {
 
     reluKernel<<<gridSize, blockSize>>>(d_input, d_output, rows, cols);
 
-    cudaMemcpy(output, d_output, rows * cols * sizeof(float), cudaMemcpyDeviceToHost);
+    // cudaMemcpy(output, d_output, rows * cols * sizeof(float), cudaMemcpyDeviceToHost);
 
     // cudaFree(d_input);
-    cudaFree(d_output);
+    // cudaFree(d_output);
 }
 
 
@@ -345,6 +338,9 @@ int main() {
     float* tmp4 = (float*)malloc(1*1* sizeof(float));
     float* tmp6 = (float*)malloc(500*50*1*1* sizeof(float));
     float *fc1reluoutput = (float*)malloc(500 * sizeof(float));
+    float *d_fc1reluoutput;
+    cudaMalloc(&d_fc1reluoutput, 500 * sizeof(float));
+
     float* tmp3 = (float*)malloc(1*1* sizeof(float));
     float* tmp5 = (float*)malloc(1*1* sizeof(float));
 
@@ -359,7 +355,7 @@ int main() {
     cudaMemcpy(d_conv2Weights, conv2Weights,   50*5*5*20 * sizeof(float), cudaMemcpyHostToDevice);
 
     for (int x=0;x<filePaths.size();x++) {
-        clock_t start1, stop1, start2;	
+        clock_t start1, stop1, start2, end1;	
         start1 = clock();
     
         total = total+1;
@@ -422,23 +418,21 @@ int main() {
         // cudaMemcpy(d_pool2output, pool2output,  50*4*4 * sizeof(float), cudaMemcpyHostToDevice);
         start2 = clock();
         for(int i=0; i< 500; i++){
-            for(int j=0; j<50; j++){
-                // convolutionCUDA(pool2output + j*4*4, fc1Weights + i*4*4*50 + j*4*4, tmp6, 4, 4);
-                // fc1(d_pool2output + j*4*4, d_fc1Weights + i*4*4*50 + j*4*4, d_tmp6 + i*50 + j, 4, 4);
-                dim3 blockSizefc1(16, 16);
-                dim3 gridSizefc1((4 + blockSizefc1.x - 1) / blockSizefc1.x, (4 + blockSizefc1.y - 1) / blockSizefc1.y);
-                fc1kernel<<<gridSizefc1, blockSizefc1, 0>>>(d_pool2output + j*4*4, d_fc1Weights + i*4*4*50 + j*4*4, d_tmp6 + i*50 + j , 4, 4);
-
-                
-            }  
+                dim3 blockSizefc1(2, 2);
+                dim3 gridSizefc1(4, 4);
+                fc1kernel<<<gridSizefc1, blockSizefc1, 0>>>(d_pool2output , d_fc1Weights + i*4*4*50, d_tmp6 + i*50, 4, 4);
         }
+        end1 = clock();
+        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
+        cout << "Time taken fc1: " << time_taken1 << " seconds" << endl;
+        start2 = clock();
         int blockSize = 256;
         int gridSize = (500 + blockSize - 1) / blockSize;
         computeFC1Output<<<gridSize, blockSize>>>(d_fc1Output, d_tmp6, d_fc1bias);
 
         end1 = clock();
         time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken fc1: " << time_taken1 << " seconds" << endl;
+        cout << "Time taken computefc1: " << time_taken1 << " seconds" << endl;
 
         // computeFC1Output<<<gridSize, blockSize>>>(d_fc1Output, d_tmp6);
         // cudaMemcpy(fc1output, d_fc1Output, 500 * sizeof(float), cudaMemcpyDeviceToHost);
@@ -449,10 +443,11 @@ int main() {
         // ----------------------------------relu---------------------------
         cout << "relu\n";
         start2 = clock();
-        reluCUDA(d_fc1Output, fc1reluoutput, 1, 500);
+        reluCUDA(d_fc1Output, d_fc1reluoutput, 1, 500);
         end1 = clock();
         time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
         cout << "Time taken relu: " << time_taken1 << " seconds" << endl;
+        cudaMemcpy(fc1reluoutput, d_fc1reluoutput, 500 * sizeof(float), cudaMemcpyDeviceToHost);
 
         // ------------------fc2---------------------
         cout<<"fc2\n";
@@ -506,7 +501,7 @@ int main() {
         cout << "Time taken prediction: " << time_taken1 << " seconds" << endl;
 
         stop1 = clock();
-        float time_taken1 = (float) (stop1-start1)/(CLOCKS_PER_SEC) ;
+        time_taken1 = (float) (stop1-start1)/(CLOCKS_PER_SEC) ;
         cout << "Time taken per image: " << time_taken1 << " seconds" << endl;
         cout << "correct: " << correct << " total: " << total << endl;
     }
