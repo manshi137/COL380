@@ -39,27 +39,24 @@ __global__ void fc1kernel(float *input, float *kernel, float *output, int inputS
 
 
 
-__global__ void conv2kernel_again(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int outputSize = inputSize - kernelSize +1;
-    float sum = 0.0f;
-    int i,j;
-    if (col < outputSize && row < outputSize) {
-        sum = 0.0f;
-        // __shared__ float sharedInput[4][4];
-        // __shared__ float sharedKernel[4][4];
-        for (i = 0; i < kernelSize; ++i) {
-            for (j = 0; j < kernelSize; ++j) {
-                // sharedInput[i][j] = input[(row + i) * inputSize + (col + j)];
-                // sharedKernel[i][j] = kernel[i * kernelSize + j];
-                // __syncthreads();
-                // sum += sharedInput[i][j] * sharedKernel[i][j];
-                sum += input[(row + i) * inputSize + (col + j)] * kernel[i * kernelSize + j];
+__global__ void conv2kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
+    // printf("hello");
+    int x = threadIdx.x;
+    int y = threadIdx.y;
+    int z = blockIdx.x;
+    // printf("x: %d, y: %d, z: %d\n", x, y, z);
+
+    if(z<20 && x<8 && y<8){
+        int inputOffset = z * inputSize * inputSize;
+        int kernelOffset = z * kernelSize * kernelSize;
+
+        float sum = 0.0f;
+        for( int i=0; i<kernelSize; i++){
+            for(int j=0; j<kernelSize; j++){
+                sum+= input[inputOffset + (x+i)*inputSize + (y+j)] * kernel[kernelOffset + i*kernelSize + j];     
             }
         }
-        // __syncthreads();
-        output[row * outputSize + col] = sum;
+        output[z*8*8 + x*8 + y] = sum;
     }
 }
 
@@ -356,12 +353,13 @@ int main() {
 
     for (int x=0;x<filePaths.size();x++) {
         clock_t start1, stop1, start2, end1;	
-        start1 = clock();
     
         total = total+1;
-        cout << "Processing file: " << filePaths[x] << endl;
+        cout << "Processing file: " << filePaths[x] <<  " --------------------------------------------------------- "<<endl;
         readImage(filePaths[x], &image);
         cudaMemcpy(d_image, image, conv1InputSize * conv1InputSize * sizeof(float), cudaMemcpyHostToDevice);
+
+        start1 = clock();
         // ------------------conv1---------------------
         cout<<"conv1\n";
         start2 = clock();
@@ -372,8 +370,8 @@ int main() {
             // cudaMemcpy(conv1output + i*24*24, d_conv1output, conv1OutputSize * conv1OutputSize * sizeof(float), cudaMemcpyDeviceToHost);
         }
         end1 = clock();
-        float time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken conv1: " << time_taken1 << " seconds" << endl;
+        double time_taken1 =  (end1-start2) * 1000.0f/ CLOCKS_PER_SEC;
+        cout << "Time taken conv1: " << time_taken1 << " milli seconds" << endl;
         // ------------------pool1---------------------
         cout<<"pool1\n";
         // cudaMemcpy(d_conv1output, conv1output,  20*24*24 * sizeof(float), cudaMemcpyHostToDevice);
@@ -384,20 +382,16 @@ int main() {
             maxPoolingKernel<<<gridSizepool1, blockSizepool1, 0>>>(d_conv1output + i*24*24, d_pool1output + i*12*12, 24, poolSize);
         }
         end1 = clock();
-        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken pool1: " << time_taken1 << " seconds" << endl;
+        time_taken1 = (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        cout << "Time taken pool1: " << time_taken1 << "milli seconds" << endl;
         // ------------------conv2---------------------
         cout<<"conv2\n";
         start2 = clock();
         for(int i=0; i< 50; i++){
-            for(int j=0; j<20; j++){
-
-                dim3 blockSizeconv2(16, 16);
-                dim3 gridSizeconv2((12 + blockSizeconv2.x - 1) / blockSizeconv2.x, (12 + blockSizeconv2.y - 1) / blockSizeconv2.y);
-                conv2kernel_again<<<gridSizeconv2, blockSizeconv2, 0>>>(d_pool1output + j*12*12, d_conv2Weights + i*5*5*20 + j*5*5, d_tmp7 + i*20*64 + j*64 , 12, 5);
-
-                
-            }  
+            dim3 blockSizeconv2(8, 8);
+            // dim3 gridSizeconv2(1, 1, 1);
+            int gridSizeconv2 = 20;
+            conv2kernel<<<gridSizeconv2, blockSizeconv2>>>(d_pool1output, d_conv2Weights + i*5*5*20, d_tmp7 + i*20*8*8, 12, 5);
         }
         int blockSizeconv21 = 256;
         int gridSizeconv21 = (50 + blockSizeconv21 - 1) / blockSizeconv21;
@@ -410,8 +404,9 @@ int main() {
             // maxPoolingCUDA(d_conv2output + i*8*8, d_pool2output + i*4*4, 8, poolSize);
         }
         end1 = clock();
-        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken conv2: " << time_taken1 << " seconds" << endl;
+        // time in milliseconds
+        time_taken1 = (end1-start2)* 1000.0f/ CLOCKS_PER_SEC;
+        cout << "Time taken conv2: " << time_taken1 << " milliseconds" << endl;
         // ------------------fc1---------------------
         cout<<"fc1 --\n";
         
@@ -423,30 +418,23 @@ int main() {
                 fc1kernel<<<gridSizefc1, blockSizefc1, 0>>>(d_pool2output , d_fc1Weights + i*4*4*50, d_tmp6 + i*50, 4, 4);
         }
         end1 = clock();
-        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken fc1: " << time_taken1 << " seconds" << endl;
+        time_taken1 =  (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        cout << "Time taken fc1: " << time_taken1 << " milliseconds" << endl;
         start2 = clock();
         int blockSize = 256;
         int gridSize = (500 + blockSize - 1) / blockSize;
         computeFC1Output<<<gridSize, blockSize>>>(d_fc1Output, d_tmp6, d_fc1bias);
-
         end1 = clock();
-        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken computefc1: " << time_taken1 << " seconds" << endl;
-
-        // computeFC1Output<<<gridSize, blockSize>>>(d_fc1Output, d_tmp6);
-        // cudaMemcpy(fc1output, d_fc1Output, 500 * sizeof(float), cudaMemcpyDeviceToHost);
-        // for(int i=0; i<500; i++){
-        //     d_fc1Output[i]= d_fc1Output[i]+ fc1Bias[i];
-        // }
+        time_taken1 =  (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        cout << "Time taken computefc1: " << time_taken1 << " milliseconds" << endl;
 
         // ----------------------------------relu---------------------------
         cout << "relu\n";
         start2 = clock();
         reluCUDA(d_fc1Output, d_fc1reluoutput, 1, 500);
         end1 = clock();
-        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken relu: " << time_taken1 << " seconds" << endl;
+        time_taken1 = (end1-start2)  * 1000.0f/ CLOCKS_PER_SEC ;
+        cout << "Time taken relu: " << time_taken1 << " milliseconds" << endl;
         cudaMemcpy(fc1reluoutput, d_fc1reluoutput, 500 * sizeof(float), cudaMemcpyDeviceToHost);
 
         // ------------------fc2---------------------
@@ -459,28 +447,27 @@ int main() {
                 // convolutionCUDA(fc1reluoutput + j*1*1, fc2Weights + i*1*1*500 + j*1*1, tmp5, 1,1);
                 tmp3[0]+= fc1reluoutput[j]*fc2Weights[i*1*1*500 + j*1*1];
             }
-            
             tmp3[0] += fc2Bias[i];
             fc2output[i*1*1] = tmp3[0];
         }
         end1 = clock();
-        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken fc2: " << time_taken1 << " seconds" << endl;
+        time_taken1 =  (end1-start2) * 1000.0f / CLOCKS_PER_SEC;
+        cout << "Time taken fc2: " << time_taken1 << " milliseconds" << endl;
 
 
         // ------------------softmax---------------------
-        cout<<"softmax\n";
+        // cout<<"softmax\n";
         start2 = clock();
         softmaxCUDA(fc2output, fc2softmaxoutput, 10);
 
-        cout << "FC2 softmax output:" << endl;
-        for(int i=0; i<10; i++){
-            cout << fc2softmaxoutput[i] << " ";
-        }
-        cout << endl;
+        // cout << "FC2 softmax output:" << endl;
+        // for(int i=0; i<10; i++){
+        //     cout << fc2softmaxoutput[i] << " ";
+        // }
+        // cout << endl;
         end1 = clock();
-        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken softmax: " << time_taken1 << " seconds" << endl;
+        time_taken1 = (end1-start2) * 1000.0f / CLOCKS_PER_SEC;
+        cout << "Time taken softmax: " << time_taken1 << "milli seconds" << endl;
 
         // ------------------prediction---------------------
         start2 = clock();
@@ -490,24 +477,24 @@ int main() {
                 maxIndex = i;
             }
         }
-        cout << "The number is: " << maxIndex << endl;
-        cout << filePaths[x] << endl;
-        cout << "The number should be: " << filePaths[x][filePaths[x].size() - 5]  << endl;
+        // cout << "The number is: " << maxIndex << endl;
+        // cout << filePaths[x] << endl;
+        // cout << "The number should be: " << filePaths[x][filePaths[x].size() - 5]  << endl;
         if(maxIndex == (int)(filePaths[x][filePaths[x].size() - 5]  - '0')){
             correct++;
         }
         end1 = clock();
-        time_taken1 = (float) (end1-start2)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken prediction: " << time_taken1 << " seconds" << endl;
+        time_taken1 = (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        cout << "Time taken prediction: " << time_taken1 << " milliseconds" << endl;
 
         stop1 = clock();
-        time_taken1 = (float) (stop1-start1)/(CLOCKS_PER_SEC) ;
-        cout << "Time taken per image: " << time_taken1 << " seconds" << endl;
+        time_taken1 = (stop1-start1)* 1000.0f/ CLOCKS_PER_SEC ;
+        cout << "Time taken per image: " << time_taken1 << " miliseconds" << endl;
         cout << "correct: " << correct << " total: " << total << endl;
     }
     stop = clock();
-    float time_taken = (float) (stop-start)/(CLOCKS_PER_SEC) ;
-    cout << "Total Time taken: " << time_taken << " seconds" << endl;
+    double time_taken = (stop-start)* 1000.0f/ CLOCKS_PER_SEC ;
+    cout << "Total Time taken: " << time_taken << "milli seconds" << endl;
     cout << "Accuracy: " << (float)correct/total*100 << "%" << endl;
     return 0;
 }
