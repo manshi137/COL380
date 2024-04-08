@@ -225,34 +225,26 @@ int main() {
     // ----------------------------------malloc---------------------------
     float *conv1Weights = (float*)malloc(20*5*5*1 * sizeof(float));
     float *conv1Bias = (float*)malloc(20*sizeof(float)); 
-    float *conv1output = (float*)malloc(20*24*24 * sizeof(float));
-    float *pool1output = (float*)malloc(20*12*12 * sizeof(float));
     float *conv2Weights = (float*)malloc(50*5*5*20 * sizeof(float));
     float *conv2Bias= (float*)malloc(50*sizeof(float)); 
-    float *conv2output = (float*)malloc(50*8*8 * sizeof(float));
     float *pool2output = (float*)malloc(50*4*4 * sizeof(float));
     float *fc1Weights = (float*)malloc(500*4*4*50 * sizeof(float));
     float *fc1Bias = (float*)malloc(500*sizeof(float)); 
     float *fc1output = (float*)malloc(500 * sizeof(float));
     float *fc2Weights = (float*)malloc(10*1*1*500 * sizeof(float));
     float* fc2Bias= (float*)malloc(10*sizeof(float)); 
-    float *fc2output = (float*)malloc(10 * sizeof(float));
     float *fc2softmaxoutput = (float*)malloc(10 * sizeof(float));
     
     memset(conv1Weights, 0, 20*5*5*1 * sizeof(float));
     memset(conv1Bias, 0, 20 * sizeof(float));
-    memset(conv1output, 0, 20*24*24 * sizeof(float));
-    memset(pool1output, 0, 20*12*12 * sizeof(float));
     memset(conv2Weights, 0, 50*5*5*20 * sizeof(float));
     memset(conv2Bias, 0, 50 * sizeof(float));
-    memset(conv2output, 0, 50*8*8 * sizeof(float));
     memset(pool2output, 0, 50*4*4 * sizeof(float));
     memset(fc1Weights, 0, 500*4*4*50 * sizeof(float));
     memset(fc1Bias, 0, 500 * sizeof(float));
     memset(fc1output, 0, 500 * sizeof(float));
     memset(fc2Weights, 0, 10*1*1*500 * sizeof(float));
     memset(fc2Bias, 0, 10 * sizeof(float));
-    memset(fc2output, 0, 10 * sizeof(float));
     memset(fc2softmaxoutput, 0, 10 * sizeof(float));
 
     // --------------------------read----------------------------
@@ -356,14 +348,12 @@ int main() {
             dim3 blockSize(16, 16);
             dim3 gridSize((conv1InputSize + blockSize.x - 1) / blockSize.x, (conv1InputSize + blockSize.y - 1) / blockSize.y);
             convolution1<<<gridSize, blockSize, 0>>>(d_image, d_conv1Weights + i*convkernelSize*convkernelSize, d_conv1output + i*24*24 , conv1InputSize, convkernelSize, conv1Bias[i]);
-            // cudaMemcpy(conv1output + i*24*24, d_conv1output, conv1OutputSize * conv1OutputSize * sizeof(float), cudaMemcpyDeviceToHost);
         }
         end1 = clock();
         double time_taken1 =  (end1-start2) * 1000.0f/ CLOCKS_PER_SEC;
         // cout << "Time taken conv1: " << time_taken1 << " milli seconds" << endl;
         // ------------------pool1---------------------
         // cout<<"pool1\n";
-        // cudaMemcpy(d_conv1output, conv1output,  20*24*24 * sizeof(float), cudaMemcpyHostToDevice);
         start2 = clock();
         for(int i=0; i<conv1numkernel; i++){
             dim3 blockSizepool1(16, 16);
@@ -431,16 +421,6 @@ int main() {
         // ------------------fc2---------------------
         // cout<<"fc2\n";
         start2 = clock();
-
-        // for(int i=0; i< 10; i++){
-        //     tmp3[0] = 0.0f;
-        //     for(int j=0; j<500; j++){
-        //         // convolutionCUDA(fc1reluoutput + j*1*1, fc2Weights + i*1*1*500 + j*1*1, tmp5, 1,1);
-        //         tmp3[0]+= fc1reluoutput[j]*fc2Weights[i*1*1*500 + j*1*1];
-        //     }
-        //     tmp3[0] += fc2Bias[i];
-        //     fc2output[i*1*1] = tmp3[0];
-        // }
 
         // fc2Kernel<<<10, 1>>>(d_fc1reluoutput, d_fc2Weights, d_fc2bias, d_fc2output);
 
