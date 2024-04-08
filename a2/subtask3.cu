@@ -1,47 +1,130 @@
 #include <iostream>
 #include <vector>
 #include <fstream>
+#include <cstring>
 #include <string>
+#include <time.h>	
+#include <dirent.h> // For directory traversalusing namespace std;
+#include "read.c"
+#define BLOCK_SIZE 32
 using namespace std;
-#define BLOCK_SIZE 16
-
-
-
-__global__ void softmaxKernel(float *input, float *output, float maxVal, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (idx < size) {
-        output[idx] = expf(input[idx] - maxVal);
+__global__ void fc2Kernel(float *fc1reluoutput, float *fc2Weights, float *fc2Bias, float *fc2output) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < 10) {
+        float tmp3 = 0.0f;
+        for (int j = 0; j < 500; j++) {
+            tmp3 += fc1reluoutput[j] * fc2Weights[i * 1 * 1 * 500 + j * 1 * 1];
+        }
+        tmp3 += fc2Bias[i];
+        fc2output[i] = tmp3;
     }
 }
 
-__global__ void avgPoolingKernel(float *input, float *output, int inputSize, int poolSize) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
+__global__ void computeFC2Output(float* d_fc2Output, float* d_tmp8, float* bias) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < 10) {
+        d_fc2Output[tid] = 0.0f;
+        for (int j = 0; j < 500; ++j) {
+            d_fc2Output[tid] += d_tmp8[tid * 500 + j];
+        }
+        d_fc2Output[tid]+=bias[tid];
+    }
+}
+__global__ void fc2kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (row < inputSize && col < inputSize) {
-        int outputRow = row / poolSize;
-        int outputCol = col / poolSize;
-
-        // int inputIdx = row * inputSize + col;
-        int outputIdx = outputRow * (inputSize / poolSize) + outputCol;
-
+    int row = blockIdx.x * blockDim.y + threadIdx.y;
+    int index = row*32 + col;
+    int startOffset = index*1*1;
+    if (index< 500){
         float sum = 0.0f;
-        for (int i = 0; i < poolSize; ++i) {
-            for (int j = 0; j < poolSize; ++j) {
-                int curRow = outputRow * poolSize + i;
-                int curCol = outputCol * poolSize + j;
-                if (curRow < inputSize && curCol < inputSize) {
-                    int curInputIdx = curRow * inputSize + curCol;
-                    sum += input[curInputIdx];
-                }
+
+                // sum += input[i*4 + j] * kernel[i*4 + j];
+                sum += input[startOffset] * kernel[startOffset];
+
+        output[index] = sum;
+    }
+}
+__global__ void computeFC1Output(float* d_fc1Output, float* d_tmp6, float* bias) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < 500) {
+        d_fc1Output[tid] = 0.0f;
+        for (int j = 0; j < 50; ++j) {
+            d_fc1Output[tid] += d_tmp6[tid * 50 + j];
+        }
+        d_fc1Output[tid]+=bias[tid];
+    }
+}
+
+__global__ void fc1kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int index = row*8 + col;
+    int startOffset = index*4*4;
+    if (index< 50){
+        float sum = 0.0f;
+        for(int i=0; i<kernelSize; i++){
+            for(int j=0; j<kernelSize; j++){
+                // sum += input[i*4 + j] * kernel[i*4 + j];
+                sum += input[startOffset + i*kernelSize + j] * kernel[startOffset + i*kernelSize + j];
             }
         }
-
-        output[outputIdx] = sum / (poolSize * poolSize);
+        output[index] = sum;
     }
 }
 
+__global__ void conv2kernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
+    // printf("hello");
+    int x = threadIdx.x;
+    int y = threadIdx.y;
+    int z = blockIdx.x;
+    // printf("x: %d, y: %d, z: %d\n", x, y, z);
+
+    if(z<20 && x<8 && y<8){
+        int inputOffset = z * inputSize * inputSize;
+        int kernelOffset = z * kernelSize * kernelSize;
+
+        float sum = 0.0f;
+        for( int i=0; i<kernelSize; i++){
+            for(int j=0; j<kernelSize; j++){
+                sum+= input[inputOffset + (x+i)*inputSize + (y+j)] * kernel[kernelOffset + i*kernelSize + j];     
+            }
+        }
+        output[z*8*8 + x*8 + y] = sum;
+    }
+}
+
+__global__ void computeConv2Output(float* d_conv2Output, float* d_tmp7, float *bias) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid < 50) {
+        for(int i=0; i<64; i++){
+            d_conv2Output[tid*64+i] = 0.0f;
+            for (int j = 0; j < 20; ++j) {
+                d_conv2Output[tid*64+i] += d_tmp7[tid * 20*64 + j*64+ i];
+            }
+            d_conv2Output[tid*64 +i]+= bias[tid];
+        }
+        // d_conv2Output[tid]+= bias[tid];
+    }
+} 
+
+
+__global__ void convolution1(float *input, float *kernel, float *output, int inputSize, int kernelSize, float bias) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int outputSize = inputSize - kernelSize +1;
+
+    if (col < outputSize && row < outputSize) {
+        float sum = 0.0f;
+        for (int i = 0; i < kernelSize; ++i) {
+            for (int j = 0; j < kernelSize; ++j) {
+                int inputIdx = (row + i) * inputSize + (col + j);
+                int kernelIdx = i * kernelSize + j;
+                sum += input[inputIdx] * kernel[kernelIdx];
+            }
+        }
+        output[row * outputSize + col] = sum + bias;
+    }
+}
 
 __global__ void maxPoolingKernel(float *input, float *output, int inputSize, int poolSize) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -61,26 +144,14 @@ __global__ void maxPoolingKernel(float *input, float *output, int inputSize, int
                 int curCol = outputCol * poolSize + j;
                 if (curRow < inputSize && curCol < inputSize) {
                     int inputIdx = curRow * inputSize + curCol;
+                    // cout<<input[inputIdx]<<" "<<maxVal;
                     maxVal = fmaxf(maxVal, input[inputIdx]);
                 }
             }
         }
-
         output[outputIdx] = maxVal;
     }
 }
-
-
-__global__ void tanhKernel(float *input, float *output, int rows, int cols) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (row < rows && col < cols) {
-        int index = row * cols + col;
-        output[index] = tanh(input[index]);
-    }
-}
-
 
 __global__ void reluKernel(float *input, float *output, int rows, int cols) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -92,340 +163,339 @@ __global__ void reluKernel(float *input, float *output, int rows, int cols) {
     }
 }
 
-
-__global__ void convolutionKernel(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int outputSize = inputSize - kernelSize +1;
-
-    if (col < outputSize && row < outputSize) {
-        float sum = 0.0f;
-        for (int i = 0; i < kernelSize; ++i) {
-            for (int j = 0; j < kernelSize; ++j) {
-                int inputIdx = (row + i) * inputSize + (col + j);
-                int kernelIdx = i * kernelSize + j;
-                sum += input[inputIdx] * kernel[kernelIdx];
-            }
-        }
-        output[row * outputSize + col] = sum;
-    }
-}
-
-
-
-void convolutionCUDA(float *input, float *kernel, float *output, int inputSize, int kernelSize) {
-    float *d_input, *d_kernel, *d_output;
-    int outputSize = inputSize - kernelSize +1;
-    cudaMalloc(&d_input, inputSize * inputSize * sizeof(float));
-    cudaMalloc(&d_kernel, kernelSize * kernelSize * sizeof(float));
-    cudaMalloc(&d_output, outputSize * outputSize * sizeof(float));
-
-    cudaMemcpy(d_input, input, inputSize * inputSize * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_kernel, kernel, kernelSize * kernelSize * sizeof(float), cudaMemcpyHostToDevice);
-
-    dim3 blockSize(16, 16);
-    dim3 gridSize((inputSize + blockSize.x - 1) / blockSize.x, (inputSize + blockSize.y - 1) / blockSize.y);
-
-    convolutionKernel<<<gridSize, blockSize>>>(d_input, d_kernel, d_output, inputSize, kernelSize);
-
-    cudaMemcpy(output, d_output, outputSize * outputSize * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_input);
-    cudaFree(d_kernel);
-    cudaFree(d_output);
-}
-
-
-void reluCUDA(float *input, float *output, int rows, int cols) {
-    float *d_input, *d_output;
-
-    cudaMalloc(&d_input, rows * cols * sizeof(float));
-    cudaMalloc(&d_output, rows * cols * sizeof(float));
-
-    cudaMemcpy(d_input, input, rows * cols * sizeof(float), cudaMemcpyHostToDevice);
-
+void reluCUDA(float *d_input, float *d_output, int rows, int cols) {
     dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
     dim3 gridSize((cols + BLOCK_SIZE - 1) / BLOCK_SIZE, (rows + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
     reluKernel<<<gridSize, blockSize>>>(d_input, d_output, rows, cols);
-
-    cudaMemcpy(output, d_output, rows * cols * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_input);
-    cudaFree(d_output);
 }
 
 
-void tanhCUDA(float *input, float *output, int rows, int cols) {
-    float *d_input, *d_output;
+__global__ void softmaxKernel(float *input, float *output, float maxVal, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    cudaMalloc(&d_input, rows * cols * sizeof(float));
-    cudaMalloc(&d_output, rows * cols * sizeof(float));
-
-    cudaMemcpy(d_input, input, rows * cols * sizeof(float), cudaMemcpyHostToDevice);
-
-    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 gridSize((cols + BLOCK_SIZE - 1) / BLOCK_SIZE, (rows + BLOCK_SIZE - 1) / BLOCK_SIZE);
-
-    tanhKernel<<<gridSize, blockSize>>>(d_input, d_output, rows, cols);
-
-    cudaMemcpy(output, d_output, rows * cols * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_input);
-    cudaFree(d_output);
-}
-
-
-void maxPoolingCUDA(float* input, float* output, int inputSize, int poolSize) {
-    // int inputSize = input.size();
-    int outputSize = inputSize / poolSize;
-
-    float *d_input, *d_output;
-
-    cudaMalloc(&d_input, inputSize * inputSize * sizeof(float));
-    cudaMalloc(&d_output, outputSize * outputSize * sizeof(float));
-
-    cudaMemcpy(d_input, input, inputSize * inputSize * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_output, output, outputSize * outputSize * sizeof(float), cudaMemcpyHostToDevice);
-
-    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 gridSize((inputSize + BLOCK_SIZE - 1) / BLOCK_SIZE, (inputSize + BLOCK_SIZE - 1) / BLOCK_SIZE);
-
-    maxPoolingKernel<<<gridSize, blockSize>>>(d_input, d_output, inputSize, poolSize);
-
-    cudaMemcpy(output, d_output, outputSize * outputSize * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_input);
-    cudaFree(d_output);
-}
-
-
-void avgPoolingCUDA(float* input, float* output, int inputSize, int poolSize) {
-    // int inputSize = input.size();
-    int outputSize = inputSize / poolSize;
-
-    float *d_input, *d_output;
-
-    cudaMalloc(&d_input, inputSize * inputSize * sizeof(float));
-    cudaMalloc(&d_output, outputSize * outputSize * sizeof(float));
-
-    cudaMemcpy(d_input, input, inputSize * inputSize * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_output, output, outputSize * outputSize * sizeof(float), cudaMemcpyHostToDevice);
-
-    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 gridSize((inputSize + BLOCK_SIZE - 1) / BLOCK_SIZE, (inputSize + BLOCK_SIZE - 1) / BLOCK_SIZE);
-
-    avgPoolingKernel<<<gridSize, blockSize>>>(d_input, d_output, inputSize, poolSize);
-
-    cudaMemcpy(output, d_output, outputSize * outputSize * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_input);
-    cudaFree(d_output);
-}
-
-
-
-
-void softmaxCUDA(float* input, float* output, int inputSize) {
-    int size = inputSize;
-    // std::vector<float> result(size);
-    float maxVal = input[0];
-    for (size_t i = 1; i < inputSize; ++i) {
-        if (input[i] > maxVal) {
-            maxVal = input[i];
+    if (idx < size) {
+        float maxInput = input[0];
+        for (int i = 1; i < size; ++i) {
+            maxInput = max(maxInput, input[i]);
         }
-    }
-    float sumExp = 0.0f;
 
-    float *d_input, *d_output;
-    cudaMalloc(&d_input, size * sizeof(float));
-    cudaMalloc(&d_output, size * sizeof(float));
-
-    cudaMemcpy(d_input, input, size * sizeof(float), cudaMemcpyHostToDevice);
-
-    softmaxKernel<<<(size + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(d_input, d_output, maxVal, size);
-
-    cudaMemcpy(output, d_output, size * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_input);
-    cudaFree(d_output);
-
-    for (int i = 0; i < size; ++i) {
-        sumExp += output[i];
-    }
-
-    for (int i = 0; i < size; ++i) {
-        output[i] /= sumExp;
-    }
-}
-
-void readKernelWeightsAndBiasconv1(const std::string& filename, int numFilters, int kernelSize, float** kernelWeights, float** biasValues) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Unable to open file: " << filename << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    // Calculate the total number of weights and biases for each filter
-    int totalWeights = kernelSize * kernelSize;
-    int totalBias = 20;
-
-    // Allocate memory for kernel weights and bias values
-    *kernelWeights = (float*)malloc(numFilters * totalWeights * sizeof(float));
-    *biasValues = (float*)malloc(numFilters * totalBias * sizeof(float));
-
-    // Read kernel weights and bias values for each filter
-    for (int i = 0; i < numFilters; ++i) {
-        // Read kernel weights
-        for (int j = 0; j < totalWeights; ++j) {
-            if (!(file >> (*kernelWeights)[i * totalWeights + j])) {
-                std::cerr << "Error: Unable to read kernel weights from file: " << filename << std::endl;
-                exit(EXIT_FAILURE);
-            }
+        float expSum = 0.0f;
+        for (int i = 0; i < size; ++i) {
+            expSum += expf(input[i] - maxInput);
         }
+
+        output[idx] = expf(input[idx] - maxInput) / expSum;
     }
-        // Read bias values
-        for (int j = 0; j < totalBias; ++j) {
-            if (!(file >> (*biasValues)[j])) {
-                std::cerr << "Error: Unable to read bias values from file: " << filename << std::endl;
-                exit(EXIT_FAILURE);
-            }
-        }
-    
-
-    file.close();
-}
-
-
-void readKernelWeightsAndBiasconv2(const std::string& filename, int numFilters, int inputchannels, int kernelSize, float** kernelWeights, float** biasValues) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Error: Unable to open file: " << filename << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    // Calculate the total number of weights and biases for each filter
-    int totalWeights = kernelSize * kernelSize * inputchannels;
-    int totalBias = 50;
-
-    // Allocate memory for kernel weights and bias values
-    *kernelWeights = (float*)malloc(numFilters * totalWeights * sizeof(float));
-    *biasValues = (float*)malloc(numFilters * totalBias * sizeof(float));
-
-    // Read kernel weights and bias values for each filter
-    for (int i = 0; i < numFilters; ++i) {
-        // Read kernel weights
-        for (int j = 0; j < totalWeights; ++j) {
-            if (!(file >> (*kernelWeights)[i * totalWeights + j])) {
-                std::cerr << "Error: Unable to read kernel weights from file: " << filename << std::endl;
-                exit(EXIT_FAILURE);
-            }
-        }
-    }
-        // Read bias values
-        for (int j = 0; j < totalBias; ++j) {
-            if (!(file >> (*biasValues)[j])) {
-                std::cerr << "Error: Unable to read bias values from file: " << filename << std::endl;
-                exit(EXIT_FAILURE);
-            }
-        }
-    
-
-    file.close();
 }
 
 int main() {
-    const int inputSize = 28;
-    const int kernelSize = 5;
-    const int poolSize = 2;
+    clock_t start, stop;	
+    start = clock();
+    int correct = 0;
+    int total = 0;	
+    // conv1
+    const int conv1InputSize = 28;
+    const int convkernelSize = 5;
     const int conv1numkernel = 20; //numFilters
+    // const int conv1inputchannelnum = 1;
+    const int conv1OutputSize = conv1InputSize - convkernelSize + 1;
+    // pool1
+    const int poolSize = 2;
+    const int pool1OutputSize = conv1OutputSize / poolSize;
+    //  conv2
+    // const int conv2inputSize = conv1OutputSize;
+    // const int conv2inputchannelnum = 20;
     const int conv2numkernel = 50; //numFilters
-    const int conv1inputchannelnum = 1;
-    const int conv2inputchannelnum = 20;
-    int conv1OutputSize = inputSize - kernelSize + 1;
-    int pool1OutputSize = conv1OutputSize / poolSize;
-    int conv2OutputSize = pool1OutputSize - kernelSize + 1;
-    int pool2OutputSize = conv2OutputSize / poolSize;
-    // int fc1InputSize = pool2OutputSize * pool2OutputSize * 50; 
-    // const int fc1OutputSize = 500;
-    // int fc2InputSize = fc1OutputSize;
-    // const int fc2OutputSize = 10;
+    const int conv2OutputSize = pool1OutputSize - convkernelSize + 1;
+    // pool2
+    const int pool2OutputSize = conv2OutputSize / poolSize;
+    // fc1
+    const int fc1InputSize = pool2OutputSize; //4
+    // const int fckernelSize = 4;
+    // const int fc1OutputSize = fc1InputSize - fckernelSize +1 ;
+    // const int fc1InputChannel = 50;
+    // const int fc1OutputChannel = 500;
+    // fc2
+    // const int fc2InputSize = fc1OutputSize;
+    // const int fc2InputChannel = fc1OutputChannel;
+    // const int fc2OutputSize = fc2InputSize - fckernelSize +1 ;
+    // const int fc2OutputChannel = 10;
 
-    // Allocate memory for input, output, and weights
-    float *inputSoft = (float*)malloc(inputSize * inputSize * sizeof(float));
-    float *outputSoft1 = (float*)malloc(conv1OutputSize * conv1OutputSize * sizeof(float));
-    float *outputSoft2 = (float*)malloc(pool1OutputSize * pool1OutputSize * sizeof(float));
-    float *outputSoft3 = (float*)malloc(conv2OutputSize * conv2OutputSize * sizeof(float));
-    float *outputSoft4 = (float*)malloc(pool2OutputSize * pool2OutputSize * sizeof(float));
-    float *outputSoft5 = (float*)malloc(fc1OutputSize * sizeof(float));
-    float *outputSoft6 = (float*)malloc(fc2OutputSize * sizeof(float));
-    float *conv1Weights = (float*)malloc(kernelSize * kernelSize * sizeof(float));
-    float *conv2Weights = (float*)malloc(kernelSize * kernelSize * sizeof(float));
-    float *conv1Bias = (float*)malloc(conv1numkernel * sizeof(float));
-    float *conv2Bias = (float*)malloc(conv2numkernel * sizeof(float));
-    // float *fc1Weights = (float*)malloc(fc1InputSize * fc1OutputSize * sizeof(float));
-    // float *fc2Weights = (float*)malloc(fc2InputSize * fc2OutputSize * sizeof(float));
+    // ----------------------------------malloc---------------------------
+    float *conv1Weights = (float*)malloc(20*5*5*1 * sizeof(float));
+    float *conv1Bias = (float*)malloc(20*sizeof(float)); 
+    float *conv1output = (float*)malloc(20*24*24 * sizeof(float));
+    float *pool1output = (float*)malloc(20*12*12 * sizeof(float));
+    float *conv2Weights = (float*)malloc(50*5*5*20 * sizeof(float));
+    float *conv2Bias= (float*)malloc(50*sizeof(float)); 
+    float *conv2output = (float*)malloc(50*8*8 * sizeof(float));
+    float *pool2output = (float*)malloc(50*4*4 * sizeof(float));
+    float *fc1Weights = (float*)malloc(500*4*4*50 * sizeof(float));
+    float *fc1Bias = (float*)malloc(500*sizeof(float)); 
+    float *fc1output = (float*)malloc(500 * sizeof(float));
+    float *fc2Weights = (float*)malloc(10*1*1*500 * sizeof(float));
+    float* fc2Bias= (float*)malloc(10*sizeof(float)); 
+    float *fc2output = (float*)malloc(10 * sizeof(float));
+    float *fc2softmaxoutput = (float*)malloc(10 * sizeof(float));
+    
+    memset(conv1Weights, 0, 20*5*5*1 * sizeof(float));
+    memset(conv1Bias, 0, 20 * sizeof(float));
+    memset(conv1output, 0, 20*24*24 * sizeof(float));
+    memset(pool1output, 0, 20*12*12 * sizeof(float));
+    memset(conv2Weights, 0, 50*5*5*20 * sizeof(float));
+    memset(conv2Bias, 0, 50 * sizeof(float));
+    memset(conv2output, 0, 50*8*8 * sizeof(float));
+    memset(pool2output, 0, 50*4*4 * sizeof(float));
+    memset(fc1Weights, 0, 500*4*4*50 * sizeof(float));
+    memset(fc1Bias, 0, 500 * sizeof(float));
+    memset(fc1output, 0, 500 * sizeof(float));
+    memset(fc2Weights, 0, 10*1*1*500 * sizeof(float));
+    memset(fc2Bias, 0, 10 * sizeof(float));
+    memset(fc2output, 0, 10 * sizeof(float));
+    memset(fc2softmaxoutput, 0, 10 * sizeof(float));
 
+    // --------------------------read----------------------------
+    string conv1file = "trained_weights/conv1.txt";
+    string conv2file = "trained_weights/conv2.txt";
+    string fc1file = "trained_weights/fc1.txt";
+    string fc2file = "trained_weights/fc2.txt";  
+    readKernelWeightsAndBiasconv1(conv1file, &conv1Weights, &conv1Bias);
+    readKernelWeightsAndBiasconv2(conv2file, &conv2Weights, &conv2Bias);
+    readFC1(fc1file, &fc1Weights, &fc1Bias);
+    readFC2(fc2file, &fc2Weights, &fc2Bias);
 
- 
-    // Initialize weights
-    string filename="/home/cse/dual/cs5200534/a2col380/trained_weights/conv1.txt";
-    readKernelWeightsAndBiasconv1(filename, conv1numkernel, kernelSize, &conv1Weights, &conv1Bias);
-    cout << "Conv1 weights read from file:" << endl;
-    for (int i = 0; i < conv1numkernel; ++i) {
-        cout << "Filter " << i + 1 << ":" << endl;
-        for (int j = 0; j < kernelSize * kernelSize; ++j) {
-            cout << conv1Weights[i * kernelSize * kernelSize + j] << " ";
-            if((j+1)%5==0){cout<<"\n";}
+    std::string folderPath = "testtext";
+    std::vector<std::string> filePaths;
+
+    DIR* dir = opendir(folderPath.c_str());
+    if (dir == NULL) {
+        std::cerr << "Error opening directory" << std::endl;
+        return 1;
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        std::string fileName = entry->d_name;
+
+        if (fileName != "." && fileName != "..") {
+            std::string filePath = folderPath + "/" + fileName;
+            filePaths.push_back(filePath);
         }
-        cout << endl;
     }
-    std::cout << "Bias Values:" << std::endl;
-    for (int i = 0; i < conv1numkernel; ++i) {
-        std::cout << conv1Bias[i] << " ";
-    }
-    std::cout << std::endl;
 
-    filename="/home/cse/dual/cs5200534/a2col380/trained_weights/conv2.txt";
-    readKernelWeightsAndBiasconv2(filename, conv2numkernel, conv2inputchannelnum, kernelSize, &conv2Weights, &conv2Bias);
-    cout << "Conv2 weights read from file:" << endl;
-    for (int i = 0; i < 2; ++i) {
-        cout << "Filter " << i + 1 << ":" << endl;
-        for (int j = 0; j < kernelSize * kernelSize*conv2inputchannelnum; ++j) {
-            cout << conv2Weights[i * kernelSize * kernelSize * conv2inputchannelnum + j] << " ";
-            if((j+1)%5==0){cout<<"\n";}
+    closedir(dir);
+
+    float* d_conv1Weights;
+    cudaMalloc(&d_conv1Weights,  20*5*5*1 * sizeof(float));
+    float* image = (float*)malloc(28 * 28 * sizeof(float));
+    float* d_image;
+    cudaMalloc(&d_image, conv1InputSize * conv1InputSize * sizeof(float));
+    float* d_conv1output;
+    cudaMalloc(&d_conv1output, 20*24*24* sizeof(float));
+    float* d_conv2Weights;
+    cudaMalloc(&d_conv2Weights,  50*5*5*20 * sizeof(float));
+    float* d_pool1output;
+    cudaMalloc(&d_pool1output,  20*12*12 * sizeof(float));
+    float* tmp = (float*)malloc(8*8* sizeof(float));
+    float* tmp2 = (float*)malloc(8*8* sizeof(float));
+    float* d_conv2output;
+    cudaMalloc(&d_conv2output,  50*8*8 * sizeof(float));
+    float* d_fc1Weights;
+    cudaMalloc(&d_fc1Weights, 500*4*4*50 * sizeof(float));
+    float* d_fc2Weights;
+    cudaMalloc(&d_fc2Weights, 10*1*1*500 * sizeof(float));
+    float* d_conv2bias;
+    cudaMalloc(&d_conv2bias, 50 * sizeof(float));
+    float* d_fc1bias;
+    cudaMalloc(&d_fc1bias, 500 * sizeof(float));
+    float* d_fc2bias;
+    cudaMalloc(&d_fc2bias, 10 * sizeof(float));
+    float* d_pool2output;
+    cudaMalloc(&d_pool2output,  50*4*4 * sizeof(float));
+    float* tmp4 = (float*)malloc(1*1* sizeof(float));
+    float* tmp6 = (float*)malloc(500*50*1*1* sizeof(float));
+    float *fc1reluoutput = (float*)malloc(500 * sizeof(float));
+    float *d_fc1reluoutput;
+    cudaMalloc(&d_fc1reluoutput, 500 * sizeof(float));
+    float *d_fc2output;
+    cudaMalloc(&d_fc2output, 10 * sizeof(float));
+
+    float* tmp3 = (float*)malloc(1*1* sizeof(float));
+    float* tmp5 = (float*)malloc(1*1* sizeof(float));
+
+    float *d_fc1Output, *d_tmp6, *d_tmp7, *d_tmp8;
+    cudaMalloc(&d_fc1Output, 500 * sizeof(float));
+    cudaMalloc(&d_tmp6, 500 * 50 * sizeof(float)); // Assuming 500 elements per 50 elements
+    cudaMalloc(&d_tmp7, 50 * 20*8*8 * sizeof(float));
+    cudaMalloc(&d_tmp8, 500 * 10 * sizeof(float));
+    cudaMemcpy(d_fc1Weights, fc1Weights,  500*4*4*50 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_fc2Weights, fc2Weights,  10*1*1*500 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_conv2bias, conv2Bias,  50 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_fc1bias, fc1Bias,  500 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_fc2bias, fc2Bias,  10 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_conv1Weights, conv1Weights,   20*5*5*1 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_conv2Weights, conv2Weights,   50*5*5*20 * sizeof(float), cudaMemcpyHostToDevice);
+    float* d_fc2softmaxoutput;
+    cudaMalloc(&d_fc2softmaxoutput, 10 * sizeof(float));
+
+
+    for (int x=0;x<filePaths.size();x++) {
+        clock_t start1, stop1, start2, end1;	
+    
+        total = total+1;
+        cout << "Processing file: " << filePaths[x] <<  " --------------------------------------------------------- "<<endl;
+        readImage(filePaths[x], &image);
+        cudaMemcpy(d_image, image, conv1InputSize * conv1InputSize * sizeof(float), cudaMemcpyHostToDevice);
+
+        start1 = clock();
+        // ------------------conv1---------------------
+        // cout<<"conv1\n";
+        start2 = clock();
+        for(int i=0; i<conv1numkernel; i++){
+            dim3 blockSize(16, 16);
+            dim3 gridSize((conv1InputSize + blockSize.x - 1) / blockSize.x, (conv1InputSize + blockSize.y - 1) / blockSize.y);
+            convolution1<<<gridSize, blockSize, 0>>>(d_image, d_conv1Weights + i*convkernelSize*convkernelSize, d_conv1output + i*24*24 , conv1InputSize, convkernelSize, conv1Bias[i]);
+            // cudaMemcpy(conv1output + i*24*24, d_conv1output, conv1OutputSize * conv1OutputSize * sizeof(float), cudaMemcpyDeviceToHost);
         }
-        cout << endl;
+        end1 = clock();
+        double time_taken1 =  (end1-start2) * 1000.0f/ CLOCKS_PER_SEC;
+        // cout << "Time taken conv1: " << time_taken1 << " milli seconds" << endl;
+        // ------------------pool1---------------------
+        // cout<<"pool1\n";
+        // cudaMemcpy(d_conv1output, conv1output,  20*24*24 * sizeof(float), cudaMemcpyHostToDevice);
+        start2 = clock();
+        for(int i=0; i<conv1numkernel; i++){
+            dim3 blockSizepool1(16, 16);
+            dim3 gridSizepool1((24 + blockSizepool1.x - 1) / blockSizepool1.x, (24 + blockSizepool1.y - 1) / blockSizepool1.y);
+            maxPoolingKernel<<<gridSizepool1, blockSizepool1, 0>>>(d_conv1output + i*24*24, d_pool1output + i*12*12, 24, poolSize);
+        }
+        end1 = clock();
+        time_taken1 = (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        // cout << "Time taken pool1: " << time_taken1 << "milli seconds" << endl;
+        // ------------------conv2---------------------
+        // cout<<"conv2\n";
+        start2 = clock();
+        for(int i=0; i< 50; i++){
+            dim3 blockSizeconv2(8, 8);
+            // dim3 gridSizeconv2(1, 1, 1);
+            int gridSizeconv2 = 20;
+            conv2kernel<<<gridSizeconv2, blockSizeconv2>>>(d_pool1output, d_conv2Weights + i*5*5*20, d_tmp7 + i*20*8*8, 12, 5);
+        }
+        int blockSizeconv21 = 256;
+        int gridSizeconv21 = (50 + blockSizeconv21 - 1) / blockSizeconv21;
+        computeConv2Output<<<gridSizeconv21, blockSizeconv21>>>(d_conv2output, d_tmp7, d_conv2bias);
+
+        for(int i=0; i<conv2numkernel; i++){
+            dim3 blockSizepool2(16, 16);
+            dim3 gridSizepool2((8 + blockSizepool2.x - 1) / blockSizepool2.x, (24 + blockSizepool2.y - 1) / blockSizepool2.y);
+            maxPoolingKernel<<<gridSizepool2, blockSizepool2, 0>>>(d_conv2output + i*8*8, d_pool2output + i*4*4, 8, poolSize);
+            // maxPoolingCUDA(d_conv2output + i*8*8, d_pool2output + i*4*4, 8, poolSize);
+        }
+        end1 = clock();
+        // time in milliseconds
+        time_taken1 = (end1-start2)* 1000.0f/ CLOCKS_PER_SEC;
+        // cout << "Time taken conv2: " << time_taken1 << " milliseconds" << endl;
+        // ------------------fc1---------------------
+        // cout<<"fc1 --\n";
+        
+        // cudaMemcpy(d_pool2output, pool2output,  50*4*4 * sizeof(float), cudaMemcpyHostToDevice);
+
+        start2 = clock();
+        for(int i=0; i< 500; i++){
+                dim3 blockSizefc1(2, 2);
+                dim3 gridSizefc1(4, 4);
+                fc1kernel<<<gridSizefc1, blockSizefc1, 0>>>(d_pool2output , d_fc1Weights + i*4*4*50, d_tmp6 + i*50, 4, 4);
+        }
+        end1 = clock();
+        time_taken1 =  (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        // cout << "Time taken fc1: " << time_taken1 << " milliseconds" << endl;
+        start2 = clock();
+
+
+        int blockSize = 256;
+        int gridSize = (500 + blockSize - 1) / blockSize;
+        computeFC1Output<<<gridSize, blockSize>>>(d_fc1Output, d_tmp6, d_fc1bias);
+        end1 = clock();
+        time_taken1 =  (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        // cout << "Time taken computefc1: " << time_taken1 << " milliseconds" << endl;
+
+        // ----------------------------------relu---------------------------
+        // cout << "relu\n";
+        start2 = clock();
+        reluCUDA(d_fc1Output, d_fc1reluoutput, 1, 500);
+        end1 = clock();
+        time_taken1 = (end1-start2)  * 1000.0f/ CLOCKS_PER_SEC ;
+        // cout << "Time taken relu: " << time_taken1 << " milliseconds" << endl;
+
+        // ------------------fc2---------------------
+        // cout<<"fc2\n";
+        start2 = clock();
+
+        // for(int i=0; i< 10; i++){
+        //     tmp3[0] = 0.0f;
+        //     for(int j=0; j<500; j++){
+        //         // convolutionCUDA(fc1reluoutput + j*1*1, fc2Weights + i*1*1*500 + j*1*1, tmp5, 1,1);
+        //         tmp3[0]+= fc1reluoutput[j]*fc2Weights[i*1*1*500 + j*1*1];
+        //     }
+        //     tmp3[0] += fc2Bias[i];
+        //     fc2output[i*1*1] = tmp3[0];
+        // }
+
+        // fc2Kernel<<<10, 1>>>(d_fc1reluoutput, d_fc2Weights, d_fc2bias, d_fc2output);
+
+        for(int i=0; i< 10; i++){
+                dim3 blockSizefc2(32, 32);
+                int gridSizefc2= 1;
+                fc2kernel<<<gridSizefc2, blockSizefc2, 0>>>(d_fc1reluoutput , d_fc2Weights + i*1*1*500, d_tmp8 + i*500, 1, 1);
+        }
+        end1 = clock();
+        time_taken1 =  (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        // cout << "Time taken fc2: " << time_taken1 << " milliseconds" << endl;
+        start2 = clock();
+
+
+        int blockSizefc2 = 256;
+        int gridSizefc2 = (10 + blockSizefc2 - 1) / blockSizefc2;
+        computeFC2Output<<<gridSizefc2, blockSizefc2>>>(d_fc2output, d_tmp8, d_fc2bias);
+        end1 = clock();
+        time_taken1 =  (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        // cout << "Time taken fc2compute: " << time_taken1 << " milliseconds" << endl;
+
+
+        // ------------------softmax---------------------
+        // cout<<"softmax\n";
+        start2 = clock();
+        // softmaxCUDA(d_fc2output, fc2softmaxoutput, 10);
+        softmaxKernel<<<1, 10>>>(d_fc2output, d_fc2softmaxoutput, 0, 10);
+        cudaMemcpy(fc2softmaxoutput, d_fc2softmaxoutput, 10 * sizeof(float), cudaMemcpyDeviceToHost);
+        end1 = clock();
+        time_taken1 = (end1-start2) * 1000.0f / CLOCKS_PER_SEC;
+        // cout << "Time taken softmax: " << time_taken1 << "milli seconds" << endl;
+
+        // ------------------prediction---------------------
+        start2 = clock();
+        int maxIndex = 0;
+        for(int i=0; i<10; i++){
+            if(fc2softmaxoutput[i] > fc2softmaxoutput[maxIndex]){
+                maxIndex = i;
+            }
+        }
+        if(maxIndex == (int)(filePaths[x][filePaths[x].size() - 5]  - '0')){
+            correct++;
+        }
+        end1 = clock();
+        time_taken1 = (end1-start2)* 1000.0f/ CLOCKS_PER_SEC ;
+        // cout << "Time taken prediction: " << time_taken1 << " milliseconds" << endl;
+
+        stop1 = clock();
+        time_taken1 = (stop1-start1)* 1000.0f/ CLOCKS_PER_SEC ;
+        // cout << "Time taken per image: " << time_taken1 << " miliseconds" << endl;
+        cout << "correct: " << correct << " total: " << total << endl;
     }
-    std::cout << "Bias Values:" << std::endl;
-    for (int i = 0; i < conv2numkernel; ++i) {
-        std::cout << conv2Bias[i] << " ";
-    }
-    std::cout << std::endl;
-
-
-    // Perform forward pass
-    // convolution(inputSoft, outputSoft1, conv1Weights, inputSize, kernelSize);
-    // maxPooling(outputSoft1, outputSoft2, conv1OutputSize, poolSize);
-    // convolution(outputSoft2, outputSoft3, conv2Weights, pool1OutputSize, kernelSize);
-    // maxPooling(outputSoft3, outputSoft4, conv2OutputSize, poolSize);
-    // fullyConnected(outputSoft4, outputSoft5, fc1Weights, fc1InputSize, fc1OutputSize);
-    // relu(outputSoft5, fc1OutputSize);
-    // fullyConnected(outputSoft5, outputSoft6, fc2Weights, fc2InputSize, fc2OutputSize);
-    // softmax(outputSoft6, fc2OutputSize);
-
-    // Free allocated memory
-    free(inputSoft);
-    free(outputSoft1);
-    free(outputSoft2);
-    free(outputSoft3);
-    free(outputSoft4);
-    free(outputSoft5);
-    free(outputSoft6);
-    free(conv1Weights);
-    free(conv2Weights);
-    free(fc1Weights);
-    free(fc2Weights);
-
+    stop = clock();
+    double time_taken = (stop-start)* 1000.0f/ CLOCKS_PER_SEC ;
+    cout << "Total Time taken: " << time_taken << "milli seconds" << endl;
+    cout << "Accuracy: " << (float)correct/total*100 << "%" << endl;
     return 0;
 }
