@@ -8,6 +8,48 @@
 #include "read.c"
 #define BLOCK_SIZE 32
 using namespace std;
+
+// Function to print the top 5 softmax probabilities and return the digit with the highest probability
+int printTop5SoftmaxProb(float* softmaxOutput, int size) {
+    // Array to store softmax probabilities
+    float probs[10];
+
+    // Copy softmax probabilities to probs array
+    for (int i = 0; i < 10; ++i) {
+        probs[i] = softmaxOutput[i];
+    }
+
+    // Print the top 5 softmax probabilities and their corresponding labels
+    printf("Top 5 softmax probabilities:\n");
+    for (int i = 0; i < 5; ++i) {
+        float maxProb = -1.0;
+        int maxIndex = -1;
+        // Find the maximum probability
+        for (int j = 0; j < 10; ++j) {
+            if (probs[j] > maxProb) {
+                maxProb = probs[j];
+                maxIndex = j;
+            }
+        }
+        printf("Label: %d, Probability: %f\n", maxIndex, maxProb);
+        // Set the maximum probability to a negative value to ignore it in the next iteration
+        probs[maxIndex] = -1.0;
+    }
+
+    // Find the label with the highest probability
+    int maxLabel = -1;
+    float maxProb = -1.0;
+    for (int i = 0; i < 10; ++i) {
+        if (softmaxOutput[i] > maxProb) {
+            maxProb = softmaxOutput[i];
+            maxLabel = i;
+        }
+    }
+
+    // Return the label with the highest probability
+    return maxLabel;
+}
+
 __global__ void fc2Kernel(float *fc1reluoutput, float *fc2Weights, float *fc2Bias, float *fc2output) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < 10) {
@@ -455,12 +497,7 @@ int main() {
 
         // ------------------prediction---------------------
         start2 = clock();
-        int maxIndex = 0;
-        for(int i=0; i<10; i++){
-            if(fc2softmaxoutput[i] > fc2softmaxoutput[maxIndex]){
-                maxIndex = i;
-            }
-        }
+        int maxIndex = printTop5SoftmaxProb(fc2softmaxoutput, 10);
         if(maxIndex == (int)(filePaths[x][filePaths[x].size() - 5]  - '0')){
             correct++;
         }
